@@ -1,0 +1,17 @@
+##First initiate modules, load bcl2fastq, cellranger
+
+module load modules modules-init modules-gs
+
+module load bcl2fastq/2.20
+
+module load cellranger/7.0.1
+
+##Change directory to where you want it to run
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+##Then run cell ranger mkfastq. id argument will create an output directory in working directory.
+
+cellranger mkfastq --id=cellranger_mkfastq_output \
+--run=/net/shendure/vol9/seq/NOVASEQ/230803_Troy_Flo_Riza_Scaled_CRISPRaQTL/net/nwgc/vol1/data/GRC51NS/raw/230802_GRC51NS_0898_B_HLNWGDMXY/ \
+--csv=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/Sample_Sheet.csv 

@@ -1,0 +1,196 @@
+##Scaled screen
+
+
+## lane 1 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_1 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_1.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+
+## lane 2 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_2 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_2.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 3 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_3 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_3.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 4 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_4 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_4.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 5 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_5 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_5.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 6 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_6 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_6.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 7 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_7 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_7.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 8 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_8 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_8.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 9 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_9 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_9.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 10 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_10 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_10.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 11 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_11 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_11.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 12 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_12 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_12.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 13 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_13 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_13.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 14 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_14 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_14.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 15 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_15 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_15.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+
+## lane 16 neurons ##
+
+##Initiate modules, load cell ranger, navigate to directory, then run cellranger count. Id argument will create a folder for the output in the working directory. 
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+cellranger count --id=cellranger_count_output_lane_16 --libraries=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/libraries_lane_16.csv --transcriptome=/net/shendure/vol10/www/content/members/CRISPRa_QTL_website/public/data/transcriptome_reference/refdata-cellranger-GRCh38-3.0.0/ --feature-ref=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv --expect-cells=22000 --localmem=300 --include-introns=false
+
+

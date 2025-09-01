@@ -1,0 +1,258 @@
+---
+title: "SCEPTRE_Scaled_Neuron_Enhancer_DE"
+author: "Troy McDiarmid"
+date: "2023-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(cowplot)
+library(Matrix)
+library(sceptre)
+library(VGAM)
+library(hdf5r)
+library(Seurat)
+library(usethis)
+
+```
+
+
+```{r}
+##First create gRNA groups DF (each gRNA is tested independently in this design)
+
+#Reading in the feature reference 
+
+Ft_Ref <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Cell_Ranger_Scripts_And_Outputs/Cellranger_Input_Files/feat_ref_200_char_final.csv")  %>% 
+    rename(gRNA = id)
+
+
+##Constructing gRNA groups dataframe
+
+gRNA_group_data_frame <- Ft_Ref %>% 
+  select(gRNA, target_gene_id, target_gene_name)
+
+targeting_gRNA_group_data_frame <- gRNA_group_data_frame %>% 
+  filter(!target_gene_id == "Non-Targeting")
+NTC_gRNA_group_data_frame <- gRNA_group_data_frame %>% 
+  filter(target_gene_id == "Non-Targeting")
+
+targeting_gRNA_group_data_frame$grna_group <- targeting_gRNA_group_data_frame$gRNA 
+NTC_gRNA_group_data_frame$grna_group <- "non-targeting"
+
+gRNA_group_data_frame <- rbind(targeting_gRNA_group_data_frame, NTC_gRNA_group_data_frame)
+
+gRNA_group_data_frame$grna_id <- gRNA_group_data_frame$gRNA
+
+gRNA_group_data_frame <- gRNA_group_data_frame %>% 
+  select(grna_id, grna_group)
+
+
+##Making enhancers targeting
+
+enhancer_gRNA_group_data_frame <- gRNA_group_data_frame %>% 
+  filter(grepl("chr", grna_id))
+
+enhancer_gRNA_group_data_frame$grna_group <- enhancer_gRNA_group_data_frame$grna_id
+
+rest_gRNA_group_data_frame <- gRNA_group_data_frame %>% 
+  filter(!grepl("chr", grna_id)) 
+
+gRNA_group_data_frame <- rbind(enhancer_gRNA_group_data_frame, rest_gRNA_group_data_frame)
+
+##Making grna_group a factor
+
+#gRNA_group_data_frame <- gRNA_group_data_frame %>%
+  #mutate(grna_group = as.factor(grna_group))
+
+##Rename to current SCEPTRE terminology
+
+gRNA_target_data_frame <- gRNA_group_data_frame %>%
+  rename(grna_target = grna_group)
+
+##Creating a partitioned version for snakemake and writing to disk 
+
+#gRNA_target_data_frame_partioned <- gRNA_target_data_frame %>%
+  #mutate(partition=cut(x=sample(1:n()), breaks=100, label=F)) %>%
+  #saveRDS(paste0("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/gRNA_target_data_frame_partitioned_2.Rds"))
+
+gRNA_target_data_frame <- readRDS(paste0("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/gRNA_target_data_frame_partitioned.Rds"))
+
+
+```
+
+
+```{r}
+
+##Get gRNA coordinates in proper format for SCEPTRE
+
+gRNA_Coordinates <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_gRNA_coordinates.txt") %>% 
+  filter(!grepl("alt", seqname)) %>% 
+  filter(!grepl("fix", seqname)) %>%
+  filter(!grepl("random", seqname)) %>%
+  rename(chr = seqname, grna_id = patternID) %>% 
+  select(!strand)
+
+gRNA_target_data_frame <- readRDS(paste0("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/gRNA_target_data_frame_partitioned.Rds")) %>% 
+  filter(!grna_target == "non-targeting") %>% 
+  select(!partition)
+
+gRNA_target_data_frame <- gRNA_target_data_frame %>% 
+  left_join(gRNA_Coordinates, by = "grna_id") 
+
+
+gRNA_target_data_frame <- gRNA_target_data_frame %>% 
+  group_by(grna_target) %>%
+  mutate(Unique_gRNA_mapping_number = row_number()) %>% 
+  unite("grna_target",  c("grna_target", "Unique_gRNA_mapping_number"), remove = FALSE)
+
+
+##Load the aggregated data with direct import
+
+#sceptre_object <- import_data_from_cellranger(
+  #directories = paste0("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/SCEPTRE_Scaled_Neuron_Screen_Analysis/scaled_neuron_filtered_feature_bc_matrix"),
+  #moi = "high",
+  #grna_target_data_frame = gRNA_target_data_frame
+#)
+
+##Load the aggregated and QCd data 
+
+##Creating SCEPTRE object from preproccessed matrices 
+
+gRNA_matrix <- read_rds("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/SCEPTRE_Processed_Matrices/Scaled_Screen_gRNA_Matrix.mtx")
+gene_matrix <- read_rds("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/SCEPTRE_Processed_Matrices/Scaled_Screen_gene_Matrix.mtx")
+covariate_matrix <- read_rds("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/SCEPTRE_Processed_Matrices/Scaled_Screen_covariate_Matrix.mtx")
+
+##Select the extra covariates 
+
+Extra_Covariates <-  as.data.frame(covariate_matrix)
+
+Extra_Covariates <- Extra_Covariates %>% 
+  select(p_mito, lane)
+
+##Creating SCEPTRE object
+
+sceptre_object <- import_data(
+  response_matrix = gene_matrix,
+  grna_matrix = gRNA_matrix,
+  grna_target_data_frame = gRNA_target_data_frame,
+  extra_covariates = Extra_Covariates,
+  moi = "high",
+)
+
+
+saveRDS(sceptre_object, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/SCEPTRE_Processed_Matrices/SCEPTRE_Object.rds")
+
+
+##Isolate the discovery pairs
+
+discovery_pairs_500kb <- construct_cis_pairs(
+  sceptre_object, distance_threshold = 5e+5)
+discovery_pairs_1Mb <- construct_cis_pairs(
+  sceptre_object, distance_threshold = 1e+6)
+discovery_pairs_2Mb <- construct_cis_pairs(
+  sceptre_object, distance_threshold = 2e+6)
+discovery_pairs_4Mb <- construct_cis_pairs(
+  sceptre_object, distance_threshold = 4e+6)
+
+##Write with no NTCs
+
+write_csv(discovery_pairs_500kb, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/500kb_Scaled_SCEPTRE_V09_Discovery_Pairs_No_NTCs.csv")
+write_csv(discovery_pairs_1Mb, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/1Mb_Scaled_SCEPTRE_V09_Discovery_Pairs_No_NTCs.csv")
+write_csv(discovery_pairs_2Mb, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/2Mb_Scaled_SCEPTRE_V09_Discovery_Pairs_No_NTCs.csv")
+write_csv(discovery_pairs_4Mb, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/4Mb_Scaled_SCEPTRE_V09_Discovery_Pairs_No_NTCs.csv")
+
+##Change formatting and add back NTCs for 500kb
+
+discovery_pairs_500kb_NTCs <- discovery_pairs_500kb %>% 
+  left_join(gRNA_target_data_frame, by = "grna_target") %>% 
+  select(!grna_target)
+
+discovery_pairs_500kb_NTCs <- discovery_pairs_500kb_NTCs %>% 
+  select(grna_target = grna_id, response_id)
+
+NTCs <- readRDS(paste0("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/gRNA_target_data_frame_partitioned.Rds")) %>% 
+  filter(grna_target == "non-targeting") %>% 
+  select(!partition) %>% 
+  rename(response_id = grna_target)
+
+NTCs <- NTCs %>% 
+  select(grna_target = grna_id, response_id)
+
+discovery_pairs_500kb_NTCs <- rbind(discovery_pairs_500kb_NTCs, NTCs)
+
+discovery_pairs_500kb_NTCs <- discovery_pairs_500kb_NTCs %>% 
+    unite("grna_gene_pair",  c("grna_target", "response_id"), remove = FALSE)
+
+discovery_pairs_500kb_NTCs <- discovery_pairs_500kb_NTCs %>% 
+  distinct(grna_gene_pair, .keep_all = TRUE) %>% 
+  select(!grna_gene_pair) 
+
+
+##Change formatting Add back NTCs for 1Mb
+
+discovery_pairs_1Mb_NTCs <- discovery_pairs_1Mb %>% 
+  left_join(gRNA_target_data_frame, by = "grna_target") %>% 
+  select(!grna_target)
+
+discovery_pairs_1Mb_NTCs <- discovery_pairs_1Mb_NTCs %>% 
+  select(grna_target = grna_id, response_id)
+
+discovery_pairs_1Mb_NTCs <- rbind(discovery_pairs_1Mb_NTCs, NTCs)
+
+discovery_pairs_1Mb_NTCs <- discovery_pairs_1Mb_NTCs %>% 
+    unite("grna_gene_pair",  c("grna_target", "response_id"), remove = FALSE)
+
+discovery_pairs_1Mb_NTCs <- discovery_pairs_1Mb_NTCs %>% 
+  distinct(grna_gene_pair, .keep_all = TRUE) %>% 
+  select(!grna_gene_pair) 
+
+##Change formatting Add back NTCs for 2Mb
+
+discovery_pairs_2Mb_NTCs <- discovery_pairs_2Mb %>% 
+  left_join(gRNA_target_data_frame, by = "grna_target") %>% 
+  select(!grna_target)
+
+discovery_pairs_2Mb_NTCs <- discovery_pairs_2Mb_NTCs %>% 
+  select(grna_target = grna_id, response_id)
+
+discovery_pairs_2Mb_NTCs <- rbind(discovery_pairs_2Mb_NTCs, NTCs)
+
+discovery_pairs_2Mb_NTCs <- discovery_pairs_2Mb_NTCs %>% 
+    unite("grna_gene_pair",  c("grna_target", "response_id"), remove = FALSE)
+
+discovery_pairs_2Mb_NTCs <- discovery_pairs_2Mb_NTCs %>% 
+  distinct(grna_gene_pair, .keep_all = TRUE) %>% 
+  select(!grna_gene_pair) 
+
+##Change formatting Add back NTCs for 4Mb
+
+discovery_pairs_4Mb_NTCs <- discovery_pairs_4Mb %>% 
+  left_join(gRNA_target_data_frame, by = "grna_target") %>% 
+  select(!grna_target)
+
+discovery_pairs_4Mb_NTCs <- discovery_pairs_4Mb_NTCs %>% 
+  select(grna_target = grna_id, response_id)
+
+discovery_pairs_4Mb_NTCs <- rbind(discovery_pairs_4Mb_NTCs, NTCs)
+
+discovery_pairs_4Mb_NTCs <- discovery_pairs_4Mb_NTCs %>% 
+    unite("grna_gene_pair",  c("grna_target", "response_id"), remove = FALSE)
+
+discovery_pairs_4Mb_NTCs <- discovery_pairs_4Mb_NTCs %>% 
+  distinct(grna_gene_pair, .keep_all = TRUE) %>% 
+  select(!grna_gene_pair) 
+
+
+##Write everything
+
+write_csv(discovery_pairs_500kb_NTCs, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/500kb_Scaled_SCEPTRE_V09_Discovery_Pairs.csv")
+write_csv(discovery_pairs_1Mb_NTCs, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/1Mb_Scaled_SCEPTRE_V09_Discovery_Pairs.csv")
+write_csv(discovery_pairs_2Mb_NTCs, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/2Mb_Scaled_SCEPTRE_V09_Discovery_Pairs.csv")
+write_csv(discovery_pairs_4Mb_NTCs, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/4Mb_Scaled_SCEPTRE_V09_Discovery_Pairs.csv")
+
+
+```
+
+

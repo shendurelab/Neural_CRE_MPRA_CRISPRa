@@ -1,0 +1,579 @@
+---
+title: "Scaled_Screen_gRNA_Mapping_Neighbouring_gene_isolation"
+author: "Troy McDiarmid"
+date: "220104"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(Biostrings)
+library(BSgenome)
+library(AnnotationHub)
+library(corrplot)
+library(ggridges)
+library(microseq)
+library(ShortRead)
+library(ggrepel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(biomaRt)
+
+available.genomes()
+installed.genomes()
+```
+
+
+
+
+```{r}
+##Converting feature reference to .fa file 
+
+Ft_Ref <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/feat_ref_200_char_final.csv") %>% dplyr::select(id, number) %>% 
+  head(-1500)
+
+Ft_Ref$symbol <-">"
+
+Ft_Ref <- Ft_Ref %>% 
+  unite("id", symbol, id, sep = "")
+
+
+Ft_Ref_2 <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/feat_ref_200_char_final.csv") %>% dplyr::select(sequence, number) %>% 
+  dplyr::rename(id = sequence) %>% 
+  head(-1500)
+
+Ft_Ref_3 <- rbind(Ft_Ref, Ft_Ref_2)
+
+Ft_Ref_3 <- Ft_Ref_3 %>% 
+  arrange(number) %>% 
+  dplyr::select(id) 
+
+
+##Downsampling to 10 to see how long
+
+#Ft_Ref_3 <- Ft_Ref_3 %>% 
+  #head(2000)
+
+
+write_csv(Ft_Ref_3, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_gRNAs.fa", col_names = FALSE)
+
+```
+
+
+
+```{r}
+##Mapping a list of gRNAs to genomic coordinates. 
+
+##First read in gRNAs as FASTA
+
+x <- readDNAStringSet("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_gRNAs.fa", "fasta")
+x
+
+
+writeHits <- function(seqname, matches, strand, file="", append=FALSE)
+{
+if (file.exists(file) && !append)
+warning("existing file ", file, " will be overwritten with 'append=FALSE'")
+if (!file.exists(file) && append)
+warning("new file ", file, " will have no header with 'append=TRUE'")
+hits <- data.frame(seqname=rep.int(seqname, length(matches)),
+start=start(matches),
+end=end(matches),
+strand=rep.int(strand, length(matches)),
+patternID=names(matches),
+check.names=FALSE)
+write.table(hits, file=file, append=append, quote=FALSE, sep="\t",
+row.names=FALSE, col.names=!append)
+}
+runAnalysis1 <- function(dict0, outfile="")
+{
+library(BSgenome.Hsapiens.UCSC.hg38)
+genome <- BSgenome.Hsapiens.UCSC.hg38
+seqnames <- seqnames(genome)
+seqnames_in1string <- paste(seqnames, collapse=", ")
+cat("Target:", metadata(genome)$genome,
+"chromosomes", seqnames_in1string, "\n")
+append <- FALSE
+for (seqname in seqnames) {
+subject <- genome[[seqname]]
+cat(">>> Finding all hits in chromosome", seqname, "...\n")
+for (i in seq_len(length(dict0))) {
+patternID <- names(dict0)[i]
+pattern <- dict0[[i]]
+plus_matches <- matchPattern(pattern, subject)
+names(plus_matches) <- rep.int(patternID, length(plus_matches))
+writeHits(seqname, plus_matches, "+", file=outfile, append=append)
+append <- TRUE
+rcpattern <- reverseComplement(pattern)
+minus_matches <- matchPattern(rcpattern, subject)
+names(minus_matches) <- rep.int(patternID, length(minus_matches))
+writeHits(seqname, minus_matches, "-", file=outfile, append=append)
+}
+cat(">>> DONE\n")
+}
+}
+
+runAnalysis1(x, outfile="/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_gRNA_coordinates_modified_name_to_avoid_overwrite.txt")
+
+
+```
+
+
+```{r}
+##This works for one set of cooridnates
+
+mart <- useMart("ensembl")
+mart <- useDataset("hsapiens_gene_ensembl", mart)
+attributes <- c("ensembl_gene_id","start_position","end_position","strand","hgnc_symbol","chromosome_name","ucsc","band")
+filters <- c("chromosome_name","start","end")
+values <- list(12, 23449827, 24449845)
+all.genes <- getBM(attributes=attributes, filters=filters, values=values, mart=mart)
+
+
+## Reading in our list of gRNA coordinates, adding a unique identifier for each gRNA mapping, and calculating 1mb before and after each gRNA
+
+gRNA_Coordinates <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_gRNA_coordinates.txt") %>% 
+  dplyr::rename(Chromosome = seqname, gRNA_Name = patternID) %>% 
+  separate(Chromosome, into = c("Chr", "Chromosome"),
+            sep= 3) 
+
+gRNA_Coordinates <- gRNA_Coordinates %>% 
+  group_by(gRNA_Name) %>%
+  mutate(Unique_gRNA_mapping_number = row_number()) %>% 
+  unite("Unique_gRNA_mapping_name",  c("gRNA_Name", "Unique_gRNA_mapping_number"), remove = FALSE)
+
+gRNA_Coordinates <- gRNA_Coordinates %>% 
+  mutate(Start_1mb_Window = start - 500000) %>%
+  mutate(End_1mb_Window = end + 500000)
+
+
+```
+
+
+```{r}
+##Make the partitions
+
+gRNA_Coordinates_P1 <- gRNA_Coordinates[0:4000,]
+gRNA_Coordinates_P2 <- gRNA_Coordinates[4001:8000,]
+gRNA_Coordinates_P3 <- gRNA_Coordinates[8001:12000,]
+gRNA_Coordinates_P4 <- gRNA_Coordinates[12001:15787,]
+
+gRNA_Coordinates_P_Combined <- rbind(gRNA_Coordinates_P1, gRNA_Coordinates_P2, gRNA_Coordinates_P3, gRNA_Coordinates_P4)
+
+identical(gRNA_Coordinates_P_Combined, gRNA_Coordinates)
+
+```
+
+
+
+```{r}
+##Now loopin through to find all genes within 1mb of all guides for first partition
+
+Genes_1MB <- NULL;
+for (i in c(gRNA_Coordinates_P1$Unique_gRNA_mapping_name)) {
+Chromosome <- gRNA_Coordinates_P1 %>% 
+  filter(Unique_gRNA_mapping_name == i)
+Chromosome <- Chromosome$Chromosome
+Start_1mb_Window <- gRNA_Coordinates %>% 
+  filter(Unique_gRNA_mapping_name == i)
+Start_1mb_Window <- Start_1mb_Window$Start_1mb_Window
+End_1mb_Window <- gRNA_Coordinates_P1 %>% 
+  filter(Unique_gRNA_mapping_name == i)
+End_1mb_Window <- End_1mb_Window$End_1mb_Window
+attributes <- c("ensembl_gene_id","start_position","end_position","strand","hgnc_symbol","chromosome_name","ucsc","band")
+filters <- c("chromosome_name","start","end")
+values <- list(Chromosome, Start_1mb_Window, End_1mb_Window)
+all.genes <- getBM(attributes=attributes, filters=filters, values=values, mart=mart)
+all.genes <- add_row(all.genes, ensembl_gene_id = NA)
+all.genes$Unique_gRNA_mapping_name <- i
+Genes_1MB <- rbind(Genes_1MB, all.genes)
+} 
+
+
+##Writing the results to file
+
+write_csv(Genes_1MB, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_neighbouring_genes_1MB_P1_Initial.csv")
+
+Genes_1MB <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_neighbouring_genes_1MB_P1_Initial.csv")
+
+
+##left joining with gRNA coordinates 
+
+Genes_1MB <- Genes_1MB %>% 
+  left_join(gRNA_Coordinates, by = "Unique_gRNA_mapping_name") 
+
+##Rename columns to make them more explicit
+
+Genes_1MB <- Genes_1MB %>% 
+  dplyr::rename(target_gene_strand = strand.x, gRNA_strand = strand.y)
+
+##Calculating distance of each gene to gRNA
+
+Sense_Genes_1MB <- Genes_1MB %>% 
+  filter(target_gene_strand == "1") %>% 
+  mutate(target_gene_distance = start - start_position)
+
+Antisense_Genes_1MB <- Genes_1MB %>% 
+  filter(target_gene_strand == "-1") %>% 
+  mutate(target_gene_distance = end_position - start)
+
+Genes_1MB <- rbind(Sense_Genes_1MB, Antisense_Genes_1MB) %>% 
+  arrange(Unique_gRNA_mapping_name)
+
+
+##Only keeping distinct genes by HGNC symbol (what Seurat uses for testing) and writing to file
+
+
+Distinct_Genes_1MB <- Genes_1MB %>% 
+  group_by(Unique_gRNA_mapping_name) %>% 
+  distinct(hgnc_symbol, .keep_all = TRUE) %>% 
+  filter(!hgnc_symbol == "NA")
+
+write_csv(Distinct_Genes_1MB, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_distinct_neighbouring_genes_1MB_P1.csv") 
+
+```
+
+
+```{r}
+rm(gRNA_Coordinates_P1)
+```
+
+
+```{r}
+##Now loopin through to find all genes within 1mb of all guides for second partition
+
+Genes_1MB <- NULL;
+for (i in c(gRNA_Coordinates_P2$Unique_gRNA_mapping_name)) {
+Chromosome <- gRNA_Coordinates_P2 %>% 
+  filter(Unique_gRNA_mapping_name == i)
+Chromosome <- Chromosome$Chromosome
+Start_1mb_Window <- gRNA_Coordinates %>% 
+  filter(Unique_gRNA_mapping_name == i)
+Start_1mb_Window <- Start_1mb_Window$Start_1mb_Window
+End_1mb_Window <- gRNA_Coordinates_P2 %>% 
+  filter(Unique_gRNA_mapping_name == i)
+End_1mb_Window <- End_1mb_Window$End_1mb_Window
+attributes <- c("ensembl_gene_id","start_position","end_position","strand","hgnc_symbol","chromosome_name","ucsc","band")
+filters <- c("chromosome_name","start","end")
+values <- list(Chromosome, Start_1mb_Window, End_1mb_Window)
+all.genes <- getBM(attributes=attributes, filters=filters, values=values, mart=mart)
+all.genes <- add_row(all.genes, ensembl_gene_id = NA)
+all.genes$Unique_gRNA_mapping_name <- i
+Genes_1MB <- rbind(Genes_1MB, all.genes)
+} 
+
+
+##Writing the results to file
+
+write_csv(Genes_1MB, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_neighbouring_genes_1MB_P2_Initial.csv")
+
+Genes_1MB <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_neighbouring_genes_1MB_P2_Initial.csv")
+
+
+##left joining with gRNA coordinates 
+
+Genes_1MB <- Genes_1MB %>% 
+  left_join(gRNA_Coordinates, by = "Unique_gRNA_mapping_name") 
+
+##Rename columns to make them more explicit
+
+Genes_1MB <- Genes_1MB %>% 
+  dplyr::rename(target_gene_strand = strand.x, gRNA_strand = strand.y)
+
+##Calculating distance of each gene to gRNA
+
+Sense_Genes_1MB <- Genes_1MB %>% 
+  filter(target_gene_strand == "1") %>% 
+  mutate(target_gene_distance = start - start_position)
+
+Antisense_Genes_1MB <- Genes_1MB %>% 
+  filter(target_gene_strand == "-1") %>% 
+  mutate(target_gene_distance = end_position - start)
+
+Genes_1MB <- rbind(Sense_Genes_1MB, Antisense_Genes_1MB) %>% 
+  arrange(Unique_gRNA_mapping_name)
+
+
+##Only keeping distinct genes by HGNC symbol (what Seurat uses for testing) and writing to file
+
+
+Distinct_Genes_1MB <- Genes_1MB %>% 
+  group_by(Unique_gRNA_mapping_name) %>% 
+  distinct(hgnc_symbol, .keep_all = TRUE) %>% 
+  filter(!hgnc_symbol == "NA")
+
+write_csv(Distinct_Genes_1MB, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_distinct_neighbouring_genes_1MB_P2.csv") 
+
+```
+
+
+
+
+```{r}
+rm(gRNA_Coordinates_P2)
+```
+
+
+```{r}
+##Now loopin through to find all genes within 1mb of all guides for second partition
+
+Genes_1MB <- NULL;
+for (i in c(gRNA_Coordinates_P3$Unique_gRNA_mapping_name)) {
+Chromosome <- gRNA_Coordinates_P3 %>% 
+  filter(Unique_gRNA_mapping_name == i)
+Chromosome <- Chromosome$Chromosome
+Start_1mb_Window <- gRNA_Coordinates %>% 
+  filter(Unique_gRNA_mapping_name == i)
+Start_1mb_Window <- Start_1mb_Window$Start_1mb_Window
+End_1mb_Window <- gRNA_Coordinates_P3 %>% 
+  filter(Unique_gRNA_mapping_name == i)
+End_1mb_Window <- End_1mb_Window$End_1mb_Window
+attributes <- c("ensembl_gene_id","start_position","end_position","strand","hgnc_symbol","chromosome_name","ucsc","band")
+filters <- c("chromosome_name","start","end")
+values <- list(Chromosome, Start_1mb_Window, End_1mb_Window)
+all.genes <- getBM(attributes=attributes, filters=filters, values=values, mart=mart)
+all.genes <- add_row(all.genes, ensembl_gene_id = NA)
+all.genes$Unique_gRNA_mapping_name <- i
+Genes_1MB <- rbind(Genes_1MB, all.genes)
+} 
+
+
+##Writing the results to file
+
+write_csv(Genes_1MB, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_neighbouring_genes_1MB_P3_Initial.csv")
+
+Genes_1MB <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_neighbouring_genes_1MB_P3_Initial.csv")
+
+
+##left joining with gRNA coordinates 
+
+Genes_1MB <- Genes_1MB %>% 
+  left_join(gRNA_Coordinates, by = "Unique_gRNA_mapping_name") 
+
+##Rename columns to make them more explicit
+
+Genes_1MB <- Genes_1MB %>% 
+  dplyr::rename(target_gene_strand = strand.x, gRNA_strand = strand.y)
+
+##Calculating distance of each gene to gRNA
+
+Sense_Genes_1MB <- Genes_1MB %>% 
+  filter(target_gene_strand == "1") %>% 
+  mutate(target_gene_distance = start - start_position)
+
+Antisense_Genes_1MB <- Genes_1MB %>% 
+  filter(target_gene_strand == "-1") %>% 
+  mutate(target_gene_distance = end_position - start)
+
+Genes_1MB <- rbind(Sense_Genes_1MB, Antisense_Genes_1MB) %>% 
+  arrange(Unique_gRNA_mapping_name)
+
+
+##Only keeping distinct genes by HGNC symbol (what Seurat uses for testing) and writing to file
+
+
+Distinct_Genes_1MB <- Genes_1MB %>% 
+  group_by(Unique_gRNA_mapping_name) %>% 
+  distinct(hgnc_symbol, .keep_all = TRUE) %>% 
+  filter(!hgnc_symbol == "NA")
+
+write_csv(Distinct_Genes_1MB, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_distinct_neighbouring_genes_1MB_P3.csv") 
+
+```
+
+
+
+```{r}
+rm(gRNA_Coordinates_P3)
+```
+
+
+```{r}
+##Now loopin through to find all genes within 1mb of all guides for second partition
+
+Genes_1MB <- NULL;
+for (i in c(gRNA_Coordinates_P4$Unique_gRNA_mapping_name)) {
+Chromosome <- gRNA_Coordinates_P4 %>% 
+  filter(Unique_gRNA_mapping_name == i)
+Chromosome <- Chromosome$Chromosome
+Start_1mb_Window <- gRNA_Coordinates %>% 
+  filter(Unique_gRNA_mapping_name == i)
+Start_1mb_Window <- Start_1mb_Window$Start_1mb_Window
+End_1mb_Window <- gRNA_Coordinates_P4 %>% 
+  filter(Unique_gRNA_mapping_name == i)
+End_1mb_Window <- End_1mb_Window$End_1mb_Window
+attributes <- c("ensembl_gene_id","start_position","end_position","strand","hgnc_symbol","chromosome_name","ucsc","band")
+filters <- c("chromosome_name","start","end")
+values <- list(Chromosome, Start_1mb_Window, End_1mb_Window)
+all.genes <- getBM(attributes=attributes, filters=filters, values=values, mart=mart)
+all.genes <- add_row(all.genes, ensembl_gene_id = NA)
+all.genes$Unique_gRNA_mapping_name <- i
+Genes_1MB <- rbind(Genes_1MB, all.genes)
+} 
+
+
+##Writing the results to file
+
+write_csv(Genes_1MB, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_neighbouring_genes_1MB_P4_Initial.csv")
+
+Genes_1MB <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_neighbouring_genes_1MB_P4_Initial.csv")
+
+
+##left joining with gRNA coordinates 
+
+Genes_1MB <- Genes_1MB %>% 
+  left_join(gRNA_Coordinates, by = "Unique_gRNA_mapping_name") 
+
+##Rename columns to make them more explicit
+
+Genes_1MB <- Genes_1MB %>% 
+  dplyr::rename(target_gene_strand = strand.x, gRNA_strand = strand.y)
+
+##Calculating distance of each gene to gRNA
+
+Sense_Genes_1MB <- Genes_1MB %>% 
+  filter(target_gene_strand == "1") %>% 
+  mutate(target_gene_distance = start - start_position)
+
+Antisense_Genes_1MB <- Genes_1MB %>% 
+  filter(target_gene_strand == "-1") %>% 
+  mutate(target_gene_distance = end_position - start)
+
+Genes_1MB <- rbind(Sense_Genes_1MB, Antisense_Genes_1MB) %>% 
+  arrange(Unique_gRNA_mapping_name)
+
+
+##Only keeping distinct genes by HGNC symbol (what Seurat uses for testing) and writing to file
+
+
+Distinct_Genes_1MB <- Genes_1MB %>% 
+  group_by(Unique_gRNA_mapping_name) %>% 
+  distinct(hgnc_symbol, .keep_all = TRUE) %>% 
+  filter(!hgnc_symbol == "NA")
+
+write_csv(Distinct_Genes_1MB, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_distinct_neighbouring_genes_1MB_P4.csv") 
+
+```
+
+
+```{r}
+##Reading in distinct gene partitions and combining them 
+
+Distinct_Genes_1MB_P1 <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_distinct_neighbouring_genes_1MB_P1.csv")
+Distinct_Genes_1MB_P2 <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_distinct_neighbouring_genes_1MB_P2.csv")
+Distinct_Genes_1MB_P3 <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_distinct_neighbouring_genes_1MB_P3.csv")
+Distinct_Genes_1MB_P4 <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Scaled_Screen_hg38_gRNA_distinct_neighbouring_genes_1MB_P4.csv")
+
+Combined_Distinct_Genes_1MB <- rbind(Distinct_Genes_1MB_P1, Distinct_Genes_1MB_P2, Distinct_Genes_1MB_P3, Distinct_Genes_1MB_P4)
+
+##Filter for only genes within 500kb
+
+Combined_Distinct_Genes_1MB <- Combined_Distinct_Genes_1MB %>% 
+   filter(target_gene_distance > -500001) %>%
+   filter(target_gene_distance < 500001)  
+   
+
+write_csv(Combined_Distinct_Genes_1MB, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_mapping/Combined_Scaled_Screen_hg38_gRNA_distinct_neighbouring_genes_1MB.csv") 
+
+```
+
+```{r}
+
+##Going to do some sanity checks, first how many targeting guides are there?
+
+Combined_Distinct_Genes_1MB %>%
+  ungroup() %>% 
+  distinct(gRNA_Name)
+
+##How many distinct mappings? Should match the number of gRNA coordinates
+
+Combined_Distinct_Genes_1MB %>% 
+  distinct(Unique_gRNA_mapping_name)
+
+##Note there are 443 unique guides, exactly what we would expect with 50 true NTCs, many of which map to multiple regions in the genome - the true set of 50 NTCs will have to be the new NTCs for this which couldn't be done with the 10x analysis. 
+
+Multi_Mappin_Guides <- gRNA_Coordinates %>% 
+  group_by(gRNA_Name) %>% 
+  filter(n()>1)
+
+##See how many genes a given gRNA is typically paired with
+
+N_Distinct_1MB_Genes_Per_Spacer <- Combined_Distinct_Genes_1MB %>% 
+  dplyr::count(gRNA_Name)
+
+ggplot(N_Distinct_1MB_Genes_Per_Spacer, aes(x = n)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("N_Distinct_1MB_Genes_Per_Spacer_Scaled_Screen_Guides.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/")
+
+ggplot(N_Distinct_1MB_Genes_Per_Spacer, aes(x = n)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  scale_x_log10() +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("N_Distinct_1MB_Genes_Per_Spacer_CRISPRaQTL_Scaled_Screen_Guides_logx.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/")
+
+
+##Visualization of gRNA distance to neighbouring genes
+
+ggplot(Combined_Distinct_Genes_1MB, aes(x = target_gene_distance)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Distinct_1MB_Genes_Distance_from_spacer_Scaled_Screen_Guides.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/")
+
+
+```
+
+
+```{r}
+
+##Seeing if there are any missing gRNAs (none)
+
+Combined_Distinct_gRNA_Names <- unique(Combined_Distinct_Genes_1MB$gRNA_Name)
+
+
+missing_gRNAs <- gRNA_Coordinates %>% 
+  dplyr::filter(!gRNA_Name %in% Combined_Distinct_gRNA_Names)
+
+
+##See which gRNA mappings are missing - note virtually all secondary mappings in scaffold which would not have had any annotated genes nearby
+
+Combined_Distinct_gRNA_Mapping_Names <- unique(Combined_Distinct_Genes_1MB$Unique_gRNA_mapping_name)
+
+Missing_gRNA_Mapping_Names <- gRNA_Coordinates %>% 
+  dplyr::filter(!Unique_gRNA_mapping_name %in% Combined_Distinct_gRNA_Mapping_Names)
+
+
+```
+
+
+
+```{r}
+##Filtering for primary target genes to see how many gRNAs are not close enough to be tested against it 
+
+Primary_Target_Genes <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/CRISPa-QTL_pilot_sgRNA_seqs/NDD_Risk_Genes_Horlbeck_CRISPRaQTL_pilot_guides.csv")
+
+Primary_Target_Genes <- unique(Primary_Target_Genes$gene_symbol)
+
+Primary_Target_Tests <- Combined_Distinct_Genes_1MB %>% 
+  filter(hgnc_symbol %in% Primary_Target_Genes)
+
+Missing_Primary_Target_Tests <- gRNA_Coordinates %>% 
+  filter(!gRNA_Name %in% Primary_Target_Tests$gRNA_Name)
+
+
+```
+

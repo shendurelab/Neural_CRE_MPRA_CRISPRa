@@ -1,0 +1,14 @@
+
+## All lanes Scaled Screen##
+
+##Initiate modules, load cell ranger, change directory to output folder, then run
+
+module load modules modules-init modules-gs
+module load cellranger/7.0.1
+cd /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Outputs/
+
+## Run cell ranger mkfastq. The id argument will create a file with the given name for the output to go in
+
+cellranger aggr --id=cellranger_aggr_output --csv=/net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/Cellranger_Scripts_And_Outputs/Cellranger_Input_Files/aggregate_input_file.csv --normalize=none
+
+ 

@@ -1,0 +1,46 @@
+##First download and install FlashFry (available on github: https://github.com/mckennalab/FlashFry#quickstart)
+##There are also instructions for running Flashfry on the github
+##Download and install bedtools by compiling from github: https://bedtools.readthedocs.io/en/latest/content/installation.html
+
+##Converting bedfiles to FASTA 
+
+##Upload your bedfiles and reference genomes to the cluster 
+
+##qlogin
+
+##then run getfasta
+
+module load modules modules-init modules-gs
+module load bedtools/2.29.2
+
+bedtools getfasta -fi /net/shendure/vol10/projects/troym/ResQTL/nobackup/promoter_pilot/flashfry_guide_design/hg38.fa -bed /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Enhancer_v2/neurohub_mpra_270bp_results_top_10_percent.bed -name -s -fo /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Enhancer_v2/neurohub_mpra_270bp_results_top_10_percent.fa
+
+
+##Discovering guides in a set of fasta files
+
+java -Xmx50g -jar /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/FlashFry-assembly-1.15.jar \
+ discover \
+ --database /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/hg38_spcas9ngg_database \
+ --fasta /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Enhancer_v2/neurohub_mpra_270bp_results_top_10_percent.fa \
+ --output /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Enhancer_v2/neurohub_mpra_270bp_results_top_10_percent.output
+
+
+##Now we score the discovered sites
+
+java -Xmx50g -jar /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/FlashFry-assembly-1.15.jar \
+ score \
+ --input /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Enhancer_v2/neurohub_mpra_270bp_results_top_10_percent.output \
+ --output /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Enhancer_v2/neurohub_mpra_270bp_results_top_10_percent.output.scored \
+ --scoringMetrics doench2014ontarget,doench2016cfd,dangerous,hsu2013,minot \
+ --database /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/hg38_spcas9ngg_database
+
+
+
+
+
+
+
+
+
+
+

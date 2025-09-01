@@ -1,0 +1,48 @@
+##First download and install FlashFry (available on github: https://github.com/mckennalab/FlashFry#quickstart)
+##There are also instructions for running Flashfry on the github
+
+##Converting bedfiles to FASTA 
+
+##Upload your bedfiles and reference genomes to the cluster 
+#Make sure your reference genome is expanded using
+
+gzip -d hg19.fa.gz
+
+##then run getfasta
+
+##Q login then run 
+
+module load modules modules-init modules-gs
+module load bedtools/2.29.2
+
+bedtools getfasta -fi /net/shendure/vol10/projects/troym/ResQTL/nobackup/promoter_pilot/flashfry_guide_design/hg38.fa -bed /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Promoter/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.bed -name -s -fo /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Promoter/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.fa
+
+
+##Discovering guides in a set of fasta files
+
+java -Xmx50g -jar /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/FlashFry-assembly-1.15.jar \
+ discover \
+ --database /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/hg38_spcas9ngg_database \
+ --fasta /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Promoter/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.fa \
+ --output /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Promoter/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.output
+
+
+##Now we score the discovered sites
+
+java -Xmx50g -jar /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/FlashFry-assembly-1.15.jar \
+ score \
+ --input /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Promoter/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.output \
+ --output /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/CRISPRa_Target_Regions/Promoter/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.output.scored \
+ --scoringMetrics doench2014ontarget,doench2016cfd,dangerous,hsu2013,minot \
+ --database /net/shendure/vol10/projects/troym/ResQTL/nobackup/scaled_screen/gRNA_design/hg38_spcas9ngg_database
+
+
+
+
+
+
+
+
+
+
+

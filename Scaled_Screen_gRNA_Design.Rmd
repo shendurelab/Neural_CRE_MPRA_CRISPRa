@@ -1,0 +1,770 @@
+---
+title: "CRISPRa_Scaled_Screen_gRNA_Design"
+author: "Troy McDiarmid"
+date: "230406"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+##Loading libraries
+
+library(tidyverse)
+library(Biostrings)
+library(corrplot)
+library(ggridges)
+library(microseq)
+library(ShortRead)
+```
+
+
+```{r}
+##Reading in scaled screen promoter bed file 
+
+Scaled_Promoters <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_Design/CRISPRa_Target_Regions/Promoter/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.bed", col_names = FALSE) %>% 
+  separate(X1, into = c("chr", "Chromosome"), sep = 3) %>% 
+  separate(X4, into = c("Target_Gene_Symbol", "Transcripts"), sep = ";") %>% 
+  dplyr::rename(cCRE_Start = `X2`, cCRE_End = `X3`, Strand = `X6`) %>% 
+  select(Chromosome:Strand)
+
+##Rename certain HGNC symbols in promoter set so they are consistent with list of 337 genes (defined below). 
+
+Scaled_Promoters$Target_Gene_Symbol[which(Scaled_Promoters$Target_Gene_Symbol == "SRPRA")] <- "SRPR"
+Scaled_Promoters$Target_Gene_Symbol[which(Scaled_Promoters$Target_Gene_Symbol == "H1-4")] <- "HIST1H1E"
+
+```
+
+
+
+```{r}
+##Reading in final risk genes selected for CRISPRa CRT
+
+NDD_338_Risk_Genes <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/CRISPa-QTL_pilot_sgRNA_seqs/Neurohub_NDD_Risk_Genes_Final.csv")
+
+##See how many unique genes there are in the bed file 
+
+unique(Scaled_Promoters$Target_Gene_Symbol)
+
+length(unique(Scaled_Promoters$Target_Gene_Symbol))
+
+##There are 333 when I would expect 337
+
+##Leaving out the SUV420H1 (which is a duplicate of the KMT5B gene in the list of 337 CRT risk genes, see below), there are 4/337 ASD/NDD risk genes without a candidate promoter in this final bed file. 
+
+NDD_338_Risk_Genes %>%
+  filter(!gene_symbol %in% Scaled_Promoters$Target_Gene_Symbol)
+
+Scaled_Promoters %>%
+  filter(!Target_Gene_Symbol %in% NDD_338_Risk_Genes$gene_symbol)
+
+
+```
+
+
+```{r}
+##Reading in Horlbeck CRISPRa library to select gRNAs from
+
+Horlbeck_CRISPRaV2_Library <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/CRISPa-QTL_pilot_sgRNA_seqs/Horlbeck_CRISPRaV2_library.csv") %>% 
+  tail(-8) %>% 
+  dplyr::rename(gene_symbol = `gene`) %>% 
+  dplyr::rename(Spacer = `protospacer sequence`) %>% 
+  dplyr::rename(empirical_score = `empirical score`) %>% 
+  separate(Spacer, into = c("Spacer_Start", "Spacer_Last_19"), sep = 1)
+
+##Update NDD gene symbol annotation so they match in both dataframes 
+
+Horlbeck_CRISPRaV2_Library$gene_symbol[which(Horlbeck_CRISPRaV2_Library$gene_symbol == "SUV420H1")] <- "KMT5B"
+Horlbeck_CRISPRaV2_Library$gene_symbol[which(Horlbeck_CRISPRaV2_Library$gene_symbol == "KIAA2022")] <- "NEXMIF"
+Horlbeck_CRISPRaV2_Library$gene_symbol[which(Horlbeck_CRISPRaV2_Library$gene_symbol == "WHSC1")] <- "NSD2"
+
+##Selecting only guides targeting risk genes
+
+NDD_338_Risk_Genes_Horlbeck_Guides <- Horlbeck_CRISPRaV2_Library %>% 
+  left_join(NDD_338_Risk_Genes, by = "gene_symbol") %>% 
+  filter(!is.na(Satterstrom_ASD_102)) 
+
+write_csv(NDD_338_Risk_Genes_Horlbeck_Guides, "/Users/troymcdiarmid/Documents/Neurohub/CRISPa-QTL_pilot_sgRNA_seqs/NDD_Risk_Genes_Horlbeck_CRISPRaQTL_pilot_guides.csv")
+
+##Filter for top 4 gRNAs against each Horlbeck TSS 
+
+Top4_NDD_338_Risk_Genes_Horlbeck_Guides <- Horlbeck_CRISPRaV2_Library %>% 
+  left_join(NDD_338_Risk_Genes, by = "gene_symbol") %>% 
+  filter(!is.na(Satterstrom_ASD_102)) %>% 
+  filter(`selection rank` < 5) %>% 
+  filter(!`selection rank` == 10)
+
+write_csv(Top4_NDD_338_Risk_Genes_Horlbeck_Guides, "/Users/troymcdiarmid/Documents/Neurohub/CRISPa-QTL_pilot_sgRNA_seqs/NDD_Risk_Genes_Horlbeck_CRISPRaQTL_pilot_guides.csv")
+
+##Looks like 1 NDD risk genes is missing from the Horlbeck library, which one?
+
+NDD_338_Risk_Genes_Horlbeck_Guides_symbol <- NDD_338_Risk_Genes_Horlbeck_Guides %>% 
+  select(gene_symbol) 
+
+NDD_338_Risk_Genes_symbol <- NDD_338_Risk_Genes %>% 
+  select(gene_symbol)
+
+missing_genes <- setdiff(NDD_338_Risk_Genes_symbol, NDD_338_Risk_Genes_Horlbeck_Guides_symbol)
+
+##Looks like SUV420H1 and KMT5B are both listed in the 338 NDD risk genes when they are the same gene, meaning there is 337 targets. 
+
+##Selecting a random subset of Horlbeck NTCs for 10% of our library
+
+set.seed(2)
+
+Horlbeck_NTCs <- Horlbeck_CRISPRaV2_Library %>% 
+  filter(gene_symbol == "negative_control") %>% 
+  sample_n(1500)
+
+```
+
+
+
+```{r}
+##Reading in output from Flashfry on 761 candidate promoters 
+
+Scaled_Promoter_Flashfry_guides <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_Design/CRISPRa_Target_Regions/Promoter/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.output.scored.distance.txt")
+
+Scaled_Promoter_Flashfry_guides <- Scaled_Promoter_Flashfry_guides %>% 
+  separate(dangerous_in_genome, into = c(NA, NA, "dangerous_in_genome", sep = "_GENOME=")) %>% 
+  select(!`_GENOME=`) %>% 
+  dplyr::rename(Spacer = target) %>% 
+  separate(Spacer, into = c("Spacer", "PAM"), sep = -3) %>% 
+  separate(Spacer, into = c("Spacer_Start", "Spacer_Last_19"), sep = 1) %>%  
+  type_convert()
+
+
+```
+
+
+```{r}
+##visualizing distribution of TSS distances
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = tss_distance)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24))
+ggsave("Scaled_Promoter_tss_distance_histo.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+##Visualizing Doench on target - higher scores are better
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = Doench2014OnTarget)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Scaled_Promoter_DoenchOnTarget_histo_HigherBetter.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+
+##DoenchCFDMaxOT - lower better
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = DoenchCFD_maxOT)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24))
+ggsave("Scaled_Promoter_DoenchCFDmaxOT_histo_lower_better.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+##DoenchCFDMaxOT - higher better
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = DoenchCFD_specificityscore)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Scaled_Promoter_DoenchCFD_specificity_score_histo_higher_better.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+##Hsu off target - higher better
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = Hsu2013)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Scaled_Promoter_Hsu2013_histo_higher_scores_better.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+
+##Dangerous in genome - lower better
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = dangerous_in_genome)) +
+  geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  scale_x_log10() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24))
+ggsave("Scaled_Promoter_Dangerous_in_genome_histo_lower_scores_better.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+##Dangerous in genome - lower better
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = dangerous_in_genome)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  scale_x_log10() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Scaled_Promoter_Dangerous_in_genome_histo_lower_scores_better.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+##Bases dif to closest hit - higher better 
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = basesDiffToClosestHit)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Scaled_Promoter_basesDiffToClosestHit_higher_scores_better.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+##closest hit count - lower better 
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = closestHitCount)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Scaled_Promoter_ClosestHit_count_lower_scores_better.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/") 
+
+#Otcount - lower better 
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = otCount)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Scaled_Promoter_otCount_count_lower_scores_better.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/") 
+
+
+```
+
+
+```{r}
+##Correlation of scores 
+
+Corr_Matrix_Scaled_Promoter_Flashfry_guides <- Scaled_Promoter_Flashfry_guides %>% 
+  select(Doench2014OnTarget:DoenchCFD_specificityscore, dangerous_in_genome:closestHitCount, otCount, tss_distance)
+
+
+Corr_Matrix_Scaled_Promoter_Flashfry_guides <- cor(Corr_Matrix_Scaled_Promoter_Flashfry_guides, use = "complete.obs") 
+
+corrplot(Corr_Matrix_Scaled_Promoter_Flashfry_guides)
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = tss_distance, y = Doench2014OnTarget)) +
+  geom_hex() +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24))
+ggsave("Tss_Distance_V_Doenchontarget_corr.jpeg", width = 6, height = 5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/") 
+
+ggplot(Scaled_Promoter_Flashfry_guides, aes(x = tss_distance, y = DoenchCFD_maxOT)) +
+  geom_hex() +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24))
+ggsave("Tss_Distance_V_Doenchontarget_corr.jpeg", width = 6, height = 5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/") 
+
+Scaled_Promoter_Flashfry_guides_1000 <- Scaled_Promoter_Flashfry_guides %>% 
+  arrange(contig) %>% 
+  sample_n(1000)
+
+ggplot(Scaled_Promoter_Flashfry_guides_1000, aes(x = tss_distance, y = as_factor(contig))) + 
+  geom_density_ridges(aes(fill = as_factor(contig)), jittered_points = TRUE,
+    position = position_points_jitter(width = 0.05, height = 0),
+    point_shape = '|', point_alpha = 1, alpha = 0.7) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 24)) +
+theme(axis.text.y = element_text(family="Arial", colour = "black", size = 0)) 
+ggsave("NDD_All_Guides_Ridgline.jpeg", width = 8, height = 10, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+```
+
+
+
+```{r}
+
+##Code to filter out poly t' and/or dangerous GC
+
+  
+Scaled_Promoter_Flashfry_guides_noGCpolyT <- Scaled_Promoter_Flashfry_guides %>% 
+  filter(dangerous_polyT == "NONE") %>% 
+  filter(dangerous_GC == "NONE")
+
+unique(Scaled_Promoter_Flashfry_guides$contig)
+
+
+##Succesive rounds of relaxing location, on targets, and off targets to identify best guides per gene 
+
+##Round 1 using strict location, on target and off target thresholds followig Sanson et al (2018) meets all ideal criteria. 
+  
+Round_1_guides <- Scaled_Promoter_Flashfry_guides_noGCpolyT %>% 
+  filter(tss_distance > -150) %>% 
+  filter(tss_distance < -75) %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 1) %>% 
+  filter(Hsu2013 > 80) %>% 
+  mutate(Round_Rank = rep("1",length(contig))) 
+
+##Following optimal window from Gilbert et al. 2014 slightly wider still with same other filters 
+
+Round_2_guides <- Scaled_Promoter_Flashfry_guides_noGCpolyT %>% 
+  filter(tss_distance > -400) %>% 
+  filter(tss_distance < -50) %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 1) %>% 
+  filter(Hsu2013 > 80) %>% 
+  mutate(Round_Rank = rep("2",length(contig)))
+
+##Same window slightly lower Hsu2013 specificity scores
+
+Round_3_guides <- Scaled_Promoter_Flashfry_guides_noGCpolyT %>% 
+  filter(tss_distance > -400) %>% 
+  filter(tss_distance < -50) %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 1) %>% 
+  filter(Hsu2013 > 50) %>% 
+  mutate(Round_Rank = rep("3",length(contig)))
+
+##Same window allowing 1 perfect match off target in the genome
+
+Round_4_guides <- Scaled_Promoter_Flashfry_guides_noGCpolyT %>% 
+  filter(tss_distance > -400) %>% 
+  filter(tss_distance < -50) %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 2) %>%
+  filter(Hsu2013 > 50) %>% 
+  mutate(Round_Rank = rep("4",length(contig)))
+
+
+##Removing position requirement and relaxing off targets to capture 4 guides for all promoters
+
+Round_5_guides <- Scaled_Promoter_Flashfry_guides_noGCpolyT %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 2) %>%
+  filter(Hsu2013 > 10) %>% 
+  filter(DoenchCFD_maxOT < 0.95) %>% 
+  mutate(Round_Rank = rep("5",length(contig))) 
+
+##Removing position requirement and relaxing off targets to capture 4 guides for all promoters
+
+Round_6_guides <- Scaled_Promoter_Flashfry_guides_noGCpolyT %>% 
+  filter(dangerous_in_genome <= 10) %>%
+  mutate(Round_Rank = rep("6",length(contig)))
+
+##Combining each list of guides from the successively relaxed criteria into one list, using highest on target scores to break ties. 
+
+Final_Promoter_Guides <- rbind(Round_1_guides, Round_2_guides, Round_3_guides, Round_4_guides, Round_5_guides, Round_6_guides) %>% 
+  arrange(Round_Rank, desc(Doench2014OnTarget)) %>% 
+  distinct(Spacer_Last_19, .keep_all = TRUE)
+
+Final_Promoter_Guides$Final_Round_and_On_Target_Rank <- seq.int(nrow(Final_Promoter_Guides))
+
+Final_Promoter_Guides <- Final_Promoter_Guides %>% 
+  group_by(contig) %>% 
+  top_n(-4, Final_Round_and_On_Target_Rank)
+
+length(unique(Final_Promoter_Guides$contig))
+
+Final_Promoter_Guides <- Final_Promoter_Guides %>% 
+  arrange(contig)
+
+
+ggplot(Final_Promoter_Guides, aes(x = tss_distance)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("NDD_Final_Guides_tss_distance.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+
+ggplot(Final_Promoter_Guides, aes(x = Doench2014OnTarget)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  scale_x_continuous(limits = c(0, 1)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("NDD_Final_Guides_DoenchOnTarget.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+ggplot(Final_Promoter_Guides, aes(x = Hsu2013)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  scale_x_continuous(limits = c(0, 100)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("NDD_Final_Guides_Hsu2013.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+
+
+
+```
+
+
+
+
+```{r}
+##Flashfry gRNAs for top 10% 2422 enhancers 
+
+Scaled_Enhancer_Flashfry_guides <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_Design/CRISPRa_Target_Regions/Enhancer_v2/neurohub_mpra_270bp_results_top_10_percent.output.scored")
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  separate(dangerous_in_genome, into = c(NA, NA, "dangerous_in_genome", sep = "_GENOME=")) %>% 
+  select(!`_GENOME=`) %>% 
+  dplyr::rename(Spacer = target) %>% 
+  separate(Spacer, into = c("Spacer", "PAM"), sep = -3) %>% 
+  separate(Spacer, into = c("Spacer_Start", "Spacer_Last_19"), sep = 1) %>%  
+  type_convert() 
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  separate(contig, into = c("Chromosome", "Contig"), sep = 3) %>% 
+  separate(Contig, into = c("Chromosome", "Contig"), sep = "::") %>% 
+  separate(Chromosome, into = c("Chromosome", "cCRE_Range"), sep = ":") %>% 
+  separate(cCRE_Range, into = c("cCRE_Start", "cCRE_End"), sep = "-") %>% 
+  type_convert()
+
+##Remover any dangerous GC or polyT
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  filter(dangerous_polyT == "NONE") %>% 
+  filter(dangerous_GC == "NONE")
+
+length(unique(Scaled_Enhancer_Flashfry_guides$Contig))
+
+
+##Calculate cCRE length
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>%
+  mutate(cCRE_Length = cCRE_End - cCRE_Start)
+
+##Find cCRE centre 
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>%
+  mutate(cCRE_Centre = ((cCRE_Start + cCRE_End)/2))
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  mutate(cCRE_Centre = round(cCRE_Centre, 0))
+
+##Find gRNA location (centre) and distance to peak center (need gRNA location data)
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>%
+  mutate(gRNA_Start = (cCRE_Start + start)) %>% 
+  mutate(gRNA_Stop = (cCRE_Start + stop)) 
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>%
+  mutate(gRNA_Centre = ((gRNA_Start + gRNA_Stop)/2)) 
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  mutate(gRNA_Centre = round(gRNA_Centre, 0))
+
+Scaled_Enhancer_Flashfry_guides <- Scaled_Enhancer_Flashfry_guides %>%
+  mutate(gRNA_cCRE_Centre_Distance = cCRE_Centre - gRNA_Centre) 
+
+```
+
+
+```{r}
+
+##Visualize enhancer length,  cCRE center distance for each sgRNA and visualize 
+
+ggplot(Scaled_Enhancer_Flashfry_guides, aes(x = cCRE_Length)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  scale_x_continuous(limits = c(0, 3000)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Scaled_Enhancer_Top10p_Enhancer_Length.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+ggplot(Scaled_Enhancer_Flashfry_guides, aes(x = gRNA_cCRE_Centre_Distance)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  scale_x_continuous(limits = c(-3000, 3000)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Scaled_Enhancer_Top10p_gRNA_cCRE_Centre_Distance.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+```
+
+
+
+
+```{r}
+##Select top gRNAs per enhancer 
+
+##Succesive rounds of relaxing location, on targets, and off targets to identify best guides per gene 
+
+##Round 1 using strict location, on target and off target thresholds followig Sanson et al (2018) meets all ideal criteria. 
+  
+Round_1_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  filter(gRNA_cCRE_Centre_Distance > -100) %>% 
+  filter(gRNA_cCRE_Centre_Distance < 100) %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 1) %>% 
+  filter(Hsu2013 > 80) %>% 
+  mutate(Round_Rank = rep("1",length(Contig))) 
+
+##Following optimal window from Gilbert et al. 2014 slightly wider still with same other filters 
+
+Round_2_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  filter(gRNA_cCRE_Centre_Distance > -250) %>% 
+  filter(gRNA_cCRE_Centre_Distance < 250) %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 1) %>% 
+  filter(Hsu2013 > 80) %>% 
+  mutate(Round_Rank = rep("2",length(Contig)))
+
+##Same window slightly lower Hsu2013 specificity scores
+
+Round_3_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  filter(gRNA_cCRE_Centre_Distance > -500) %>% 
+  filter(gRNA_cCRE_Centre_Distance < 500) %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 1) %>% 
+  filter(Hsu2013 > 80) %>% 
+  mutate(Round_Rank = rep("3",length(Contig)))
+
+##Same window slightly lower Hsu2013 specificity scores
+
+
+Round_4_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  filter(gRNA_cCRE_Centre_Distance > -500) %>% 
+  filter(gRNA_cCRE_Centre_Distance < 500) %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 1) %>% 
+  filter(Hsu2013 > 60) %>% 
+  mutate(Round_Rank = rep("4",length(Contig)))
+
+##No position requirement, slightly lower specificity scores
+
+Round_5_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  filter(Doench2014OnTarget >= 0.2) %>%
+  filter(dangerous_in_genome <= 1) %>% 
+  filter(Hsu2013 > 30) %>% 
+  mutate(Round_Rank = rep("5",length(Contig)))
+
+##No position requirement, minimal off target rqequired to reach target number of gRNAs per element 
+
+Round_6_guides <- Scaled_Enhancer_Flashfry_guides %>% 
+  filter(dangerous_in_genome <= 6) %>%
+  mutate(Round_Rank = rep("6",length(Contig)))
+
+
+##Combining each list of guides from the successively relaxed criteria into one list, using highest on target scores to break ties. 
+
+Final_Scaled_Enhancer_Guides <- rbind(Round_1_guides, Round_2_guides, Round_3_guides, Round_4_guides, Round_5_guides, Round_6_guides) %>% 
+  arrange(Round_Rank, desc(Doench2014OnTarget)) %>% 
+  distinct(Spacer_Last_19, .keep_all = TRUE)
+
+Final_Scaled_Enhancer_Guides$Final_Round_and_On_Target_Rank <- seq.int(nrow(Final_Scaled_Enhancer_Guides))
+
+Final_Scaled_Enhancer_Guides <- Final_Scaled_Enhancer_Guides %>% 
+  group_by(Contig) %>% 
+  top_n(-4, Final_Round_and_On_Target_Rank)
+
+length(unique(Final_Scaled_Enhancer_Guides$target))
+
+Final_Scaled_Enhancer_Guides <- Final_Scaled_Enhancer_Guides %>% 
+  arrange(Contig)
+
+
+##Note one enhancer only has one quality gRNA making total gRNAs 9685 not expected 9688 (2422 enhancers x 4 gRNAs)
+
+Less_Than_4_Enhancer <- Final_Scaled_Enhancer_Guides %>%
+  dplyr::count(Contig)
+
+
+#Plotting gRNAs coming from each round
+
+gRNAs_By_Selection_Round <- read_csv("/Users/troymcdiarmid/Desktop/Cumulative_gRNAs_Selection_Round.csv")
+
+ggplot(gRNAs_By_Selection_Round, aes(x = Round_Rank, y = Cumulative_gRNAs)) +
+  geom_point(size = 4) +
+  geom_line(size = 1.5) +
+  theme_classic() +
+  scale_y_continuous(limits = c(0, 10000)) +
+  scale_x_continuous(limits = c(0, 6), breaks = c(0, 1, 2, 3, 4, 5, 6)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24))
+ggsave("Enhancer_gRNAs_by_selection_Round.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+
+##Visualizing scores for final enhancer gRNAs
+
+ggplot(Final_Scaled_Enhancer_Guides, aes(x = gRNA_cCRE_Centre_Distance)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  scale_x_continuous(limits = c(-2500, 2500)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Top4_Scaled_Enhancer_gRNAs_DoenchOnTarget.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+ggplot(Final_Scaled_Enhancer_Guides, aes(x = Doench2014OnTarget)) +
+   geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  scale_x_continuous(limits = c(0, 1)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Top4_Scaled_Enhancer_gRNAs_DoenchOnTarget.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+ggplot(Final_Scaled_Enhancer_Guides, aes(x = Hsu2013)) +
+  geom_histogram(color="#999999", fill="#999999") +  
+  theme_classic() +
+  scale_x_continuous(limits = c(0, 100)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks.y = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.25, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 24)) 
+ggsave("Top4_Scaled_Enhancer_gRNAs_Hsu2013.jpeg", width = 7, height = 5.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Figs/Scaled_Screen_gRNA_Design/")
+
+
+
+```
+
+
+
+```{r}
+
+##Reading in hit gRNA and feature reference files from previous multiplex CRISPRa screen as positive controls 
+
+Promoter_Hit_gRNAs <- read_csv("/Users/troymcdiarmid/Desktop/Table_S7_Neuron_Hits.csv") 
+
+Ft_Ref <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/neuron_pilot/Full/crispr_analysis/feature_reference.csv") %>% 
+  dplyr::rename(target_guide = id)
+
+Promoter_Hit_gRNAs <- Promoter_Hit_gRNAs %>% 
+  left_join(Ft_Ref, by = "target_guide") %>% 
+  select(target_guide, sequence, target_gene_name) %>% 
+  mutate(Spacer_Start = rep("G",length(target_guide))) %>% 
+  dplyr::rename(Target = target_gene_name, Spacer_Last_19 = sequence, Target = target_gene_name) %>% 
+  select(Spacer_Start, Spacer_Last_19, Target) %>% 
+  arrange(Spacer_Start, Spacer_Last_19, Target) %>% 
+  mutate(Source = rep("Hit_Promoter_gRNA",length(Spacer_Start)))
+
+
+
+```
+
+
+
+
+
+```{r}
+
+##Combine everything to get final guide list 
+
+Spacer_Only_Horlbeck_Promoter_Guides <- Top4_NDD_338_Risk_Genes_Horlbeck_Guides %>% 
+  select(Spacer_Start, Spacer_Last_19, gene_symbol) %>% 
+  dplyr::rename(Target = gene_symbol) %>%
+  mutate(Source = rep("Promoter_Horlbeck_etal", length(Spacer_Start)))
+Spacer_Only_Horlbeck_NTCs <- Horlbeck_NTCs %>% 
+  select(Spacer_Start, Spacer_Last_19, gene_symbol) %>% 
+  dplyr::rename(Target = gene_symbol) %>%  
+  mutate(Source = rep("NTC_Horlbeck_etal", length(Spacer_Start)))
+Spacer_Only_Flashfry_Promoter_Guides <- Final_Promoter_Guides %>% 
+  ungroup() %>% 
+  select(Spacer_Start, Spacer_Last_19, contig) %>% 
+  dplyr::rename(Target = contig) %>% 
+  mutate(Source = rep("Promoter_Flashfry", length(Spacer_Start)))
+Spacer_Only_Final_Enhancer_Guides <- Final_Scaled_Enhancer_Guides %>% 
+  ungroup() %>% 
+  select(Spacer_Start, Spacer_Last_19, Contig) %>% 
+  dplyr::rename(Target = Contig) %>% 
+  mutate(Source = rep("Enhancer_Flashfry", length(Spacer_Start)))
+
+
+Final_Scaled_Screen_Spacers <- rbind(Promoter_Hit_gRNAs, Spacer_Only_Final_Enhancer_Guides, Spacer_Only_Flashfry_Promoter_Guides, Spacer_Only_Horlbeck_Promoter_Guides, Spacer_Only_Horlbeck_NTCs) %>% 
+  mutate(Spacer_Last_19 = toupper(Spacer_Last_19)) %>% 
+  distinct(Spacer_Last_19, .keep_all = TRUE) 
+
+```
+
+
+```{r}
+##Append cloning sequences and write to csv
+
+Final_Scaled_Screen_Spacers <- Final_Scaled_Screen_Spacers %>% 
+  select(-Spacer_Start)
+
+Final_Scaled_Screen_Spacers$G_Start <- "G"
+Final_Scaled_Screen_Spacers$Partial_U6 <- "atcttgtggaaaggacGAAACACC"
+Final_Scaled_Screen_Spacers$Scaffold_SapI_SapI_PartialGFP <- "gtttAagagctaTGCTGGAAACAGCAtagcaaGAAGAGCAGGAGCGCTCTTCCGAGCTGTACAAGTGAACGCGTTAAGTCGA"
+Final_Scaled_Screen_Spacers$BC_10N <- "NNNNNNNNNN"
+Final_Scaled_Screen_Spacers$Capture_Seq_n_remainder <- "TCGACAAGCTCACCTATTAGCGGCTAAGGC"
+
+Final_Scaled_Screen_Spacers$ID <- seq.int(nrow(Final_Scaled_Screen_Spacers))
+
+Final_Scaled_Screen_Spacers <- Final_Scaled_Screen_Spacers %>%
+  unite(col='Full_Oligo_No_10N_BC', c('Partial_U6', 'G_Start', 'Spacer_Last_19', 'Scaffold_SapI_SapI_PartialGFP', 'Capture_Seq_n_remainder'), sep='', remove = FALSE) %>%
+  unite(col='Oligo_ID', c('ID', 'Target', 'Source'), sep='_', remove = FALSE) %>% 
+  relocate(Oligo_ID, Partial_U6, G_Start, Spacer_Last_19, Scaffold_SapI_SapI_PartialGFP, BC_10N, Capture_Seq_n_remainder, Full_Oligo_No_10N_BC, Target, Source) 
+
+Final_Scaled_Screen_Oligos_Twist_Order <- Final_Scaled_Screen_Spacers %>%
+  select(Oligo_ID, Full_Oligo_No_10N_BC)
+
+write_csv(Final_Scaled_Screen_Spacers, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_Design/Final_Scaled_Screen_Spacers_Oligos.csv")
+
+write_csv(Final_Scaled_Screen_Oligos_Twist_Order, "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/gRNA_Design/CRISPRa_Twist_Order_230411.csv")
+
+```
+
+
+
+
+
