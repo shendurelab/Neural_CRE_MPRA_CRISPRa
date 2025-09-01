@@ -1,4 +1,4 @@
-# Diversified, miniaturized and ancestral parts for mammalian genome engineering and molecular recording
+# Large-scale discovery of neural enhancers for cis-regulation therapies 
 
 Troy A. McDiarmid1,2,†, Nicholas Page3,4,5,†, Florence M. Chardon1,2,†, Riza Daza1,2, George T. Chen6,17, Michael Kosicki8 , Lucas M. James, Hannah C. Nourie, Dianne Cintron-Laboy, Arthur S. Lee9,10,11,12, Paula Vij, Diego Calderon1, Jean-Benoît Lalanne1, Beth K. Martin1,2, Kyle Fink, Michael E. Talkowski10,11,12, Alysson Muotri24, Ben Philpot, Len A. Pennacchio8,15,16, Daniel H. Geschwind6,7,17,18,19, Stephan Sanders3,5,20, Nadav Ahituv4,5*, and Jay Shendure1,2,21,22,23*
 
@@ -42,7 +42,7 @@ CRISPR-based gene activation (CRISPRa) has emerged as a promising therapeutic ap
 # Repository Contents
 
 
-This repository contains design, analysis, and visualization code for "Diversified, miniaturized and ancestral parts for mammalian genome engineering and molecular recording". 
+This repository contains design, analysis, and visualization code for "Large-scale discovery of neural enhancers for cis-regulation therapies". 
 
 Raw sequencing data, custom sequencing amplicons, and processed data files generated in this study have been deposited on the IGVF portal and are freely available with accession numbers XX (MPRA) and IGVFDS2290SSEF (single cell CRISPRa screen). 
 
