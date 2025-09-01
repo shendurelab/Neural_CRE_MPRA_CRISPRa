@@ -44,6 +44,6 @@ CRISPR-based gene activation (CRISPRa) has emerged as a promising therapeutic ap
 
 This repository contains design, analysis, and visualization code for "Large-scale discovery of neural enhancers for cis-regulation therapies". 
 
-Raw sequencing data, custom sequencing amplicons, and processed data files generated in this study have been deposited on the IGVF portal and are freely available with accession numbers XX (MPRA) and IGVFDS2290SSEF (single cell CRISPRa screen). 
+Raw sequencing data, custom sequencing amplicons, and processed data files generated in this study have been deposited on the IGVF portal and are freely available with accession numbers IGVFDS1120GRVG (MPRA) and IGVFDS2290SSEF (single cell CRISPRa screen). 
 
 The visualization scripts labeled "Fig_1_Viz.Rmd", "Fig_2_Viz.Rmd" etc. can then be used to recreate all visualizations in the manuscript. All processed data and associated metadata required to recreate visualizations are provided in the final figure data set folders labeled "Fig1_Final_Figure_Datasets", "Fig2_Final_Figure_Datasets" etc. More formal results tables including relevant test sequences for all experiments are also availale in Tables S1-S7 in the manuscript. 
