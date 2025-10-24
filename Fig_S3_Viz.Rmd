@@ -1,0 +1,903 @@
+---
+title: "Fig_S3_Visualization"
+author: "Troy McDiarmid"
+date: "2023-10-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(cowplot)
+library(Matrix)
+library(sceptre)
+library(VGAM)
+library(hdf5r)
+library(Seurat)
+library(cowplot)
+library(ggridges)
+library(biomaRt)
+
+```
+
+```{r}
+##Fig. S3a piggyFlex library stacked bar chart 
+ 
+# create a dataset
+X <- "gRNA_Class"
+gRNA_Class <- rep(c("NTC", "TSS", "Enhancer"), 1)
+value <- c(1500, 4458, 9685)
+data <- data.frame(X,gRNA_Class,value)
+ 
+data$gRNA_Class <- factor(data$gRNA_Class, levels = c("NTC", "TSS", "Enhancer"))
+
+# Stacked
+ggplot(data, aes(fill=gRNA_Class, x=value, y=X)) + 
+    geom_bar(position="stack", stat="identity") +
+  scale_fill_manual(values=c("black", "#E69F00", "#56B4E9")) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) 
+ggsave("Fig_S3_PiggyFlex_Stacked_Bar.jpeg", width = 15, height = 2.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+```
+
+
+
+
+
+```{r}
+#Fig. s3l-s3m NTC only qq plots
+
+NTC_Results = read.csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_NTC_Results.csv")
+
+library(ggplot2)
+library(cowplot)   # for arranging plots
+library(scales)
+
+# -----------------------------
+# Example data
+# -----------------------------
+set.seed(1)
+pvals <- NTC_Results$p_value                 
+
+
+pvals <- sort(pvals)
+n <- length(pvals)
+
+# Expected order stats under null
+exp_p <- (1:n) / (n + 1)
+
+# 95% CI from Beta distribution
+alpha <- 0.05
+lower <- qbeta(alpha/2, 1:n, n:1)
+upper <- qbeta(1 - alpha/2, 1:n, n:1)
+
+df <- data.frame(
+  exp_p   = exp_p,
+  obs_p   = pvals,
+  lower   = lower,
+  upper   = upper,
+  exp_m10 = -log10(exp_p),
+  obs_m10 = -log10(pvals),
+  low_m10 = -log10(lower),
+  up_m10  = -log10(upper)
+)
+
+
+# Bulk QQ plot (raw p-values)
+
+ggplot(df, aes(x = exp_p, y = obs_p)) +
+  theme_classic() +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              fill = "grey70", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linewidth = 1.5, colour = "black") +
+  geom_point(colour = "black", size = 5) +
+  #coord_equal() +
+  scale_x_reverse(limits = c(1, 0), breaks = c(1, 0.75, 0.5, 0.25, 0),
+                  labels = label_number(accuracy = 0.01)) +
+  scale_y_reverse(limits = c(1, 0), breaks = c(1, 0.75, 0.5, 0.25, 0),
+                  labels = label_number(accuracy = 0.01)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) +
+  labs(title = "", x = "", y = "") 
+ggsave("Fig_3_Neuron_SCEPTRE_NTC_Bulk_QQ.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+# Tail QQ plot (-log10 scale)
+
+breaks_p   <- c(1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5)
+breaks_m10 <- -log10(breaks_p)
+
+ggplot(df, aes(x = exp_m10, y = obs_m10)) +
+  theme_classic() +
+  geom_ribbon(aes(ymin = low_m10, ymax = up_m10),
+              fill = "grey70", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linewidth = 1.5, colour = "black") +
+  geom_point(colour = "black", size = 5) +
+  #coord_equal() +
+  scale_x_continuous(breaks = breaks_m10, labels = format(breaks_p, scientific = TRUE)) +
+  scale_y_continuous(breaks = breaks_m10, labels = format(breaks_p, scientific = TRUE)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) +
+  labs(title = "", x = "", y = "") 
+ggsave("Fig_3_Neuron_SCEPTRE_NTC_QQ.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+ 
+
+```
+
+
+```{r}
+##Fig. s3n NTC fold change distribution 
+
+mean(NTC_Results$log_2_fold_change)
+median(NTC_Results$log_2_fold_change)
+
+ggplot(NTC_Results, aes(x = log_2_fold_change)) +
+geom_histogram(colour = "#D2D5D5", fill = "#D2D5D5", binwidth = 0.1) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) +
+  scale_x_continuous(limits = c(-2,2), labels = scales::number_format(accuracy = 0.1))
+ggsave("Fig_S3_NTC_Fold_Change.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+```
+
+
+```{r}
+##Fig. s3h-k Marker gene box plots and bar plots
+  
+Gene_Matrix <- readRDS("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Scaled_Screen_gene_Matrix.mtx")
+
+##Isolating control cells
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 1000), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+
+Control_Cells_2 <- Control_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*1000)+1))
+
+Control_Cells_2$Group <- "Control_Cells"
+
+
+##Defining Target genes
+
+Target_Genes <- c("ENSG00000111704", "ENSG00000204531", "ENSG00000136826", "ENSG00000131095", "ENSG00000168329", "ENSG00000134853", "ENSG00000078018", "ENSG00000149294", "ENSG00000186868", "ENSG00000257923", "ENSG00000104888", "ENSG00000128683", "ENSG00000101438", "ENSG00000008056", "ENSG00000132639", "ENSG00000151150", "ENSG00000102003", "ENSG00000220205")
+
+
+##Filtering
+
+Control_Cells_Target_Gene <- Control_Cells_2 %>% 
+  filter(Ensembl_ID %in% Target_Genes) 
+
+
+##Add in data for the two undetected microglia and astrocyte marker genes
+
+GFAP <- Control_Cells_Target_Gene %>% 
+  filter(Ensembl_ID == "ENSG00000128683")
+
+GFAP$Ensembl_ID <- "ENSG00000131095"
+GFAP$UMI_Count <- 0
+GFAP$Normalized_Expression <- 0
+
+CX3CR1 <- Control_Cells_Target_Gene %>% 
+  filter(Ensembl_ID == "ENSG00000128683")
+
+CX3CR1$Ensembl_ID <- "ENSG00000168329"
+CX3CR1$UMI_Count <- 0
+CX3CR1$Normalized_Expression <- 0
+
+##Make final datset for plotting 
+
+Control_Cells_Target_Gene_F <- rbind(Control_Cells_Target_Gene, GFAP, CX3CR1) 
+
+##Add HGNC IDs
+
+##Convert ENSGs to gene symbols
+
+mart <- useMart("ensembl", host="https://useast.ensembl.org")
+mart <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl", host="https://useast.ensembl.org")
+genes <- Control_Cells_Target_Gene_F$Ensembl_ID
+G_list <- getBM(filters= "ensembl_gene_id", attributes= c("ensembl_gene_id","hgnc_symbol"), values=genes, mart= mart)
+
+G_list <- unique(G_list)
+
+G_list <- G_list %>% 
+  dplyr::rename(Ensembl_ID = ensembl_gene_id)
+
+Control_Cells_Target_Gene_F <- Control_Cells_Target_Gene_F %>% 
+  left_join(G_list, by = "Ensembl_ID")
+
+##plotting mean expression
+
+ggplot(Control_Cells_Target_Gene_F, aes(x=hgnc_symbol, y=Normalized_Expression)) + 
+  geom_boxplot() +  
+  geom_jitter(height = 0, width = 0.2) +
+  theme_classic() 
+
+##Plotting mean expression for first batch
+
+Control_Cells_Target_Gene_F_F <- Control_Cells_Target_Gene_F %>% 
+  filter(hgnc_symbol %in% c("NANOG", "POU5F1", "KLF4", "GFAP", "CX3CR1", "PDGFRA", "MAPT", "NCAM1", "MAP2"))
+
+Control_Cells_Target_Gene_F_F$hgnc_symbol <- factor(Control_Cells_Target_Gene_F_F$hgnc_symbol, levels = c("NANOG", "POU5F1", "KLF4", "GFAP", "CX3CR1", "PDGFRA", "MAPT", "NCAM1", "MAP2"))
+
+ggplot(Control_Cells_Target_Gene_F_F, aes(x=hgnc_symbol, y=Normalized_Expression)) + 
+  theme_classic() +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA, fill = "white" ) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 25)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S3_MAP2_Boxplot.jpeg", width = 11.75, height = 4.75)
+ 
+ 
+##Plotting mean expression for second batch
+
+Control_Cells_Target_Gene_F_F <- Control_Cells_Target_Gene_F %>% 
+  filter(hgnc_symbol %in% c("GAD1", "SLC32A1", "SLC17A7", "CUX1", "SYN1", "SNAP25", "SYP", "ANK3", "VAMP2"))
+
+Control_Cells_Target_Gene_F_F$hgnc_symbol <- factor(Control_Cells_Target_Gene_F_F$hgnc_symbol, levels = c("GAD1", "SLC32A1", "SLC17A7", "CUX1", "SYN1", "SNAP25", "SYP", "ANK3", "VAMP2"))
+
+ggplot(Control_Cells_Target_Gene_F_F, aes(x=hgnc_symbol, y=Normalized_Expression)) + 
+  theme_classic() +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA, fill = "white" ) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 25)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S3_subtype_marker_Boxplot.jpeg", width = 11.75, height = 4.75)
+
+##Calculate proportion above zero
+
+Control_Cells_Target_Gene_Prop_Above_Zero <- Control_Cells_Target_Gene_F %>% 
+  group_by(Ensembl_ID) %>% 
+  summarise(prop_gt_0 = mean(UMI_Count > 0), .groups = "drop")
+
+
+##Full scale calculation of proportion expressing target gene
+
+##Defining Target genes
+
+Target_Genes <- c("ENSG00000111704", "ENSG00000204531", "ENSG00000136826", "ENSG00000134853", "ENSG00000078018", "ENSG00000149294", "ENSG00000186868", "ENSG00000257923", "ENSG00000104888", "ENSG00000128683", "ENSG00000101438", "ENSG00000008056", "ENSG00000132639", "ENSG00000151150", "ENSG00000102003", "ENSG00000220205")
+
+
+# 1. Subset the matrix for the gene set
+subset_matrix <- Gene_Matrix[rownames(Gene_Matrix) %in% Target_Genes, ]
+
+
+
+# 2. Convert to a logical matrix indicating detectable expression (value > 0)
+detectable_expression <- subset_matrix > 0
+
+# 3. get count of cells in which each gene was detected  
+
+Cells_Gene_Detected <- rowSums(detectable_expression)
+
+Cells_Gene_Detected_DF <- as.data.frame(Cells_Gene_Detected) 
+
+Cells_Gene_Detected_DF <- rownames_to_column(Cells_Gene_Detected_DF, var = "Ensembl_ID")
+
+Cells_Gene_Detected_DF <- Cells_Gene_Detected_DF %>% 
+  mutate(Proportion_Expressing = Cells_Gene_Detected/199703)
+
+##Add in data for the two undetected microglia and astrocyte marker genes
+
+GFAP <- Cells_Gene_Detected_DF %>% 
+  filter(Ensembl_ID == "ENSG00000128683")
+
+GFAP$Ensembl_ID <- "ENSG00000131095"
+GFAP$Cells_Gene_Detected <- 0
+GFAP$Proportion_Expressing <- 0
+
+CX3CR1 <- Cells_Gene_Detected_DF %>% 
+  filter(Ensembl_ID == "ENSG00000128683")
+
+CX3CR1$Ensembl_ID <- "ENSG00000168329"
+CX3CR1$Cells_Gene_Detected <- 0
+CX3CR1$Proportion_Expressing <- 0
+
+
+##Make final datset for plotting 
+
+Cells_Gene_Detected_DF_F <- rbind(Cells_Gene_Detected_DF, GFAP, CX3CR1) 
+
+Cells_Gene_Detected_DF_F <- Cells_Gene_Detected_DF_F %>% 
+  left_join(G_list, by = "Ensembl_ID")
+
+##Plot
+
+ggplot(Cells_Gene_Detected_DF_F, aes(x = hgnc_symbol, y = Proportion_Expressing)) +
+  geom_bar(stat = "identity")
+
+##Filter for cell type marker genes, specificy order, plot 
+
+Cells_Gene_Detected_DF_F_F <- Cells_Gene_Detected_DF_F %>% 
+  filter(hgnc_symbol %in% c("NANOG", "POU5F1", "KLF4", "GFAP", "CX3CR1", "PDGFRA", "MAPT", "NCAM1", "MAP2"))
+
+Cells_Gene_Detected_DF_F_F$hgnc_symbol <- factor(Cells_Gene_Detected_DF_F_F$hgnc_symbol, levels = c("NANOG", "POU5F1", "KLF4", "GFAP", "CX3CR1", "PDGFRA", "MAPT", "NCAM1", "MAP2"))
+
+
+ggplot(Cells_Gene_Detected_DF_F_F, aes(x = hgnc_symbol, y = Proportion_Expressing)) +
+  theme_classic() +
+  geom_bar(stat = "identity", colour = "Black", fill = "white", lwd = 0.8, width = 0.4) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 25)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,1)) +
+  labs(title = "", x = "", y = "") 
+ ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S3_MAP2_Bar.jpeg", width = 11.75, height = 4.75) 
+ 
+ 
+##Filter for subtype marker genes, specificy order, plot 
+
+Cells_Gene_Detected_DF_F_F <- Cells_Gene_Detected_DF_F %>% 
+  filter(hgnc_symbol %in% c("GAD1", "SLC32A1", "SLC17A7", "CUX1", "SYN1", "SNAP25", "SYP", "ANK3", "VAMP2"))
+
+Cells_Gene_Detected_DF_F_F$hgnc_symbol <- factor(Cells_Gene_Detected_DF_F_F$hgnc_symbol, levels = c("GAD1", "SLC32A1", "SLC17A7", "CUX1", "SYN1", "SNAP25", "SYP", "ANK3", "VAMP2"))
+
+
+ggplot(Cells_Gene_Detected_DF_F_F, aes(x = hgnc_symbol, y = Proportion_Expressing)) +
+  theme_classic() +
+  geom_bar(stat = "identity", colour = "Black", fill = "white", lwd = 0.8, width = 0.4) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 25)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,1)) +
+  labs(title = "", x = "", y = "") 
+ ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S3_Subtype_Marker_Bar.jpeg", width = 11.75, height = 4.75)
+
+
+
+
+```
+
+```{r}
+
+#Fig. S3p and q 
+
+##Calculating expression level of activatable CRT genes, vs non hits, vs. all other detected genes. 
+
+Gene_Matrix <- readRDS("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Scaled_Screen_gene_Matrix.mtx")
+
+##Pseudobulk expression
+
+Pseudo_bulk <- rowSums(Gene_Matrix)
+
+##Convert to datframe
+
+Pseudo_bulk_df <- as.data.frame(Pseudo_bulk)
+
+Pseudo_bulk_df <- rownames_to_column(Pseudo_bulk_df, "Ensembl_ID")
+
+Pseudo_bulk_df <- Pseudo_bulk_df %>% 
+  dplyr::select(Ensembl_ID, Pseudo_Bulk_UMI_Count = Pseudo_bulk)
+
+##Add HGNC symbols 
+
+##Convert ENSGs to gene symbols
+
+mart <- useMart("ensembl", host="https://useast.ensembl.org")
+mart <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl", host="https://useast.ensembl.org")
+genes <- Pseudo_bulk_df$Ensembl_ID
+G_list <- getBM(filters= "ensembl_gene_id", attributes= c("ensembl_gene_id","hgnc_symbol"), values=genes, mart= mart)
+
+G_list <- unique(G_list)
+
+G_list <- G_list %>% 
+  dplyr::rename(Ensembl_ID = ensembl_gene_id)
+
+Pseudo_bulk_df <- Pseudo_bulk_df %>% 
+  left_join(G_list, by = "Ensembl_ID")
+
+
+
+##Filter for CRT genes, hits, add column indicating 
+
+CRT_Candidate_Genes <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.csv")
+
+PT_Hits_Specific_Annotated <- read_csv("/Users/troymcdiarmid/Downloads/Table_S6_CRISPRa_Activating_gRNAs.csv")
+
+Hits_Pseudo_bulk_df <- Pseudo_bulk_df %>% 
+  filter(hgnc_symbol %in% PT_Hits_Specific_Annotated$Target_Gene)
+Hits_Pseudo_bulk_df$NDD_Risk_Gene_CRISPRa_Hit <- "CRT_Hit"
+
+Not_Hits_Pseudo_bulk_df <- Pseudo_bulk_df %>% 
+  filter(hgnc_symbol %in% CRT_Candidate_Genes$gene_symbol) %>% 
+  filter(!hgnc_symbol %in% PT_Hits_Specific_Annotated$Target_Gene)
+Not_Hits_Pseudo_bulk_df$NDD_Risk_Gene_CRISPRa_Hit <- "CRT_Not_Hit" 
+
+Other_Expressed_Genes_Pseudo_bulk_df <- Pseudo_bulk_df %>% 
+  filter(!Ensembl_ID %in% CRT_Candidate_Genes$ensembl_id) 
+Other_Expressed_Genes_Pseudo_bulk_df$NDD_Risk_Gene_CRISPRa_Hit <- "Other_Gene"
+
+##Combine and plot
+
+CRT_Pseudo_Bulk_df <- rbind(Hits_Pseudo_bulk_df, Not_Hits_Pseudo_bulk_df, Other_Expressed_Genes_Pseudo_bulk_df) %>% 
+  type_convert()
+
+ggplot(CRT_Pseudo_Bulk_df, aes(x = as.factor(NDD_Risk_Gene_CRISPRa_Hit), y = log2(Pseudo_Bulk_UMI_Count), fill = as.factor(NDD_Risk_Gene_CRISPRa_Hit), colour = as.factor(NDD_Risk_Gene_CRISPRa_Hit))) +
+theme_classic() +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA) +
+  geom_jitter(size = 0.75, width = 0.15, height = 0) +
+  scale_fill_manual(values=c("#999999", "#D2D5D5","white")) +
+  scale_colour_manual(values=c("black", "black", "transparent")) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 25)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S3_Expression_Boxplot.jpeg", width = 6, height = 4.75)
+
+pairwise.wilcox.test(CRT_Pseudo_Bulk_df$Pseudo_Bulk_UMI_Count, CRT_Pseudo_Bulk_df$NDD_Risk_Gene_CRISPRa_Hit, p.adjust.method = "none") 
+ 
+pairwise.wilcox.test(CRT_Pseudo_Bulk_df$Pseudo_Bulk_UMI_Count, CRT_Pseudo_Bulk_df$NDD_Risk_Gene_CRISPRa_Hit, p.adjust.method = "BH") 
+
+
+median(Hits_Pseudo_bulk_df$Pseudo_Bulk_UMI_Count)/median(Not_Hits_Pseudo_bulk_df$Pseudo_Bulk_UMI_Count)
+
+median(Other_Expressed_Genes_Pseudo_bulk_df$Pseudo_Bulk_UMI_Count)
+
+summary(Hits_Pseudo_bulk_df)
+summary(Not_Hits_Pseudo_bulk_df)
+summary(Other_Expressed_Genes_Pseudo_bulk_df)
+
+##Which of our 337 genes did not have detectable expression in NGN2 neurons
+
+CRT_Genes_In_Pseudo_bulk_df <- Pseudo_bulk_df %>% 
+  filter(hgnc_symbol %in% CRT_Candidate_Genes$gene_symbol)
+
+CRT_Genes_Not_In_Pseudo_bulk_df <- CRT_Candidate_Genes %>% 
+  filter(!gene_symbol %in% CRT_Genes_In_Pseudo_bulk_df$hgnc_symbol) 
+
+##Correlate fold change in upregulation with expression level 
+  
+Hits_Pseudo_bulk_df <- Hits_Pseudo_bulk_df
+
+Average_Fold_Change <- PT_Hits_Specific_Annotated %>% 
+  dplyr::select(Target_Gene, Log_2_Fold_Change) %>% 
+  group_by(Target_Gene) %>% 
+  mutate(Average_Log_2_Fold_Change = mean(Log_2_Fold_Change)) %>% 
+  ungroup() %>% 
+  distinct(Target_Gene, .keep_all = TRUE) %>% 
+  dplyr::rename(hgnc_symbol = Target_Gene)
+
+CRT_Pseudo_Bulk_df_corr <- Hits_Pseudo_bulk_df %>% 
+  left_join(Average_Fold_Change, by = "hgnc_symbol")
+
+ggplot(CRT_Pseudo_Bulk_df_corr, aes(x = log2(Pseudo_Bulk_UMI_Count), y = Average_Log_2_Fold_Change)) +
+  theme_classic() +
+  geom_hline(yintercept=0, linetype='dashed', col = '#D2D5D5', size = 0.75) +
+  geom_point(size = 2) +
+  scale_fill_manual(values=c("#999999", "#D2D5D5","white")) +
+  scale_colour_manual(values=c("black", "black", "transparent")) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 25)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(-1,8), breaks = c(0,2,4,6)) +
+  labs(title = "", x = "", y = "") 
+ ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S3_Expression_Fold_Change_Relationship.jpeg", width = 17, height = 4.75)
+
+
+##Doing same as above but with 1000 randomly sampled cells and normalized expression. 
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 1000), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+
+Control_Cells_2 <- Control_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*1000)+1))
+
+##Calculate mean normalized expression and pseudobulk 
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Ensembl_ID) %>% 
+  mutate(Mean_Normalized_Expression = mean(Normalized_Expression)) %>% 
+  ungroup() %>% 
+  distinct(Ensembl_ID, .keep_all = TRUE) %>%
+  dplyr::select(!Normalized_Expression) %>% 
+  dplyr::select(!Cell_BC) %>% 
+  dplyr::select(!UMI_Count)
+
+##Add HGNC symbol 
+
+Control_Cells_2 <- Control_Cells_2 %>%
+  left_join(G_list, by = "Ensembl_ID")
+
+##Rename
+
+Pseudo_bulk_df_2 <- Control_Cells_2
+
+##Do the same comparisons 
+
+Hits_Pseudo_bulk_df <- Pseudo_bulk_df_2 %>% 
+  filter(hgnc_symbol %in% PT_Hits_Specific_Annotated$Target_Gene)
+Hits_Pseudo_bulk_df$NDD_Risk_Gene_CRISPRa_Hit <- "CRT_Hit"
+
+Not_Hits_Pseudo_bulk_df <- Pseudo_bulk_df_2 %>% 
+  filter(hgnc_symbol %in% CRT_Candidate_Genes$gene_symbol) %>% 
+  filter(!hgnc_symbol %in% PT_Hits_Specific_Annotated$Target_Gene)
+Not_Hits_Pseudo_bulk_df$NDD_Risk_Gene_CRISPRa_Hit <- "CRT_Not_Hit" 
+
+Other_Expressed_Genes_Pseudo_bulk_df <- Pseudo_bulk_df_2 %>% 
+  filter(!Ensembl_ID %in% CRT_Candidate_Genes$ensembl_id) 
+Other_Expressed_Genes_Pseudo_bulk_df$NDD_Risk_Gene_CRISPRa_Hit <- "Other_Gene"
+
+##Combine and plot
+
+CRT_Pseudo_Bulk_df <- rbind(Hits_Pseudo_bulk_df, Not_Hits_Pseudo_bulk_df, Other_Expressed_Genes_Pseudo_bulk_df)
+
+ggplot(CRT_Pseudo_Bulk_df, aes(x = as.factor(NDD_Risk_Gene_CRISPRa_Hit), y = log2(Mean_Normalized_Expression))) +
+  geom_boxplot()
+
+
+##Which of our 337 genes did not have detectable expression in NGN2 neurons
+
+CRT_Genes_In_Pseudo_bulk_df <- Pseudo_bulk_df_2 %>% 
+  filter(hgnc_symbol %in% CRT_Candidate_Genes$gene_symbol)
+
+CRT_Genes_Not_In_Pseudo_bulk_df <- CRT_Candidate_Genes %>% 
+  filter(!gene_symbol %in% CRT_Genes_In_Pseudo_bulk_df$hgnc_symbol) 
+
+##Correlate fold change in upregulation with expression level 
+  
+Hits_Pseudo_bulk_df <- Hits_Pseudo_bulk_df
+
+Average_Fold_Change <- PT_Hits_Specific_Annotated %>% 
+  dplyr::select(Target_Gene, Log_2_Fold_Change) %>% 
+  group_by(Target_Gene) %>% 
+  mutate(Average_Log_2_Fold_Change = mean(Log_2_Fold_Change)) %>% 
+  ungroup() %>% 
+  distinct(Target_Gene, .keep_all = TRUE) %>% 
+  dplyr::rename(hgnc_symbol = Target_Gene)
+
+CRT_Pseudo_Bulk_df_corr <- Hits_Pseudo_bulk_df %>% 
+  left_join(Average_Fold_Change, by = "hgnc_symbol")
+
+ggplot(CRT_Pseudo_Bulk_df_corr, aes(x = log2(Mean_Normalized_Expression), y = Average_Log_2_Fold_Change)) +
+  geom_point()
+
+
+```
+
+
+
+```{r}
+##How many of the hit gRNAs are specific within 1Mb? 
+
+PT_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% 
+  filter(!gRNA_Start == 45619857)
+
+setwd("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/SCEPTRE_1Mb/outputs/")
+
+df <- list.files(pattern = "analysis.rds", recursive = T) %>%
+  map(readRDS) %>% 
+  bind_rows() %>% 
+  separate(grna_target, c("gRNA_ID", "Garbage"), sep = "_", remove = FALSE) %>% 
+  dplyr::select(!Garbage) 
+
+df <- df %>% 
+  dplyr::select(!significant) %>% 
+  distinct()
+
+One_Mb_Results <- df %>% 
+  mutate(q_value = p.adjust(p_value, method="BH"))
+
+One_Mb_Hits <- One_Mb_Results %>% 
+  filter(q_value < 0.1) 
+
+
+##Filter for 1Mb results involving the PT hit gRNAs
+
+PT_Hits_1MB_Results <- One_Mb_Results %>% 
+  filter(gRNA_ID %in% PT_Hits$gRNA_ID) %>% 
+  mutate(q_value = p.adjust(p_value, method="BH"))
+
+PT_Hits_1MB_Hits <- PT_Hits_1MB_Results %>% 
+  filter(q_value < 0.1) 
+
+##Create a new column for gRNA_ID and linked upregulated target 
+
+PT_Hits_1MB_Hits <- PT_Hits_1MB_Hits %>% 
+  unite(gRNA_ID_Target_Gene, c("gRNA_ID", "response_id"), remove = FALSE)
+
+##Create the same columns for PT hits
+
+PT_Hits <- PT_Hits %>% 
+  unite(gRNA_ID_Target_Gene, c("gRNA_ID", "Ensembl_Id"), remove = FALSE) 
+
+##See how many 1MB upregulations are also PT hits 
+
+PT_Hits_Also_1MB_Hits <- PT_Hits %>% 
+  filter(gRNA_ID_Target_Gene %in% PT_Hits_1MB_Hits$gRNA_ID_Target_Gene) %>% 
+  filter(!gRNA_Start == 45619857)
+
+
+##How many of these upregulated more than 1 target gene
+
+Upregulations_Per_gRNA <- PT_Hits_1MB_Hits %>% count(gRNA_ID)
+
+Multiple_Upregulation_gRNAs <- Upregulations_Per_gRNA  %>% 
+  filter(n > 1)
+
+##Specific gRNAs 
+
+Specific_PT_Hits <- PT_Hits %>% 
+  filter(gRNA_ID %in% PT_Hits_1MB_Hits$gRNA_ID) %>% 
+  filter(!gRNA_ID %in% Multiple_Upregulation_gRNAs$gRNA_ID) %>% 
+  filter(!gRNA_Start == 45619857)
+
+length(unique(Specific_PT_Hits$Target_Gene))
+
+##Proportion activating gRNAs that are specific within 1Mb
+
+(504-68)/504 
+
+length(unique(Specific_PT_Hits$gRNA_ID)) / length(unique(PT_Hits_Also_1MB_Hits$gRNA_ID))
+
+
+##Proportion of activateable genes for which we identified a specific gRNA 
+
+193/203 
+
+length(unique(Specific_PT_Hits$Target_Gene))/length(unique(PT_Hits$Target_Gene))
+
+##Which of the 200 genes did we not find a specific gRNA for 
+
+Non_Specific_Activateable_Genes <- PT_Hits %>% filter(!Target_Gene %in% Specific_PT_Hits$Target_Gene) %>% 
+  distinct(Target_Gene, .keep_all = TRUE)
+
+```
+
+
+
+```{r}
+##Do the same thing as above but only for CRT target genes 
+
+
+CRT_Candidate_Genes <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.csv")
+
+
+##How many of the 512 hit gRNAs are specific within 1Mb? 
+
+PT_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% 
+  filter(Target_Gene %in% CRT_Candidate_Genes$gene_symbol) %>% 
+  filter(!gRNA_Start == 45619857)
+
+setwd("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/SCEPTRE_1Mb/outputs/")
+
+df <- list.files(pattern = "analysis.rds", recursive = T) %>%
+  map(readRDS) %>% 
+  bind_rows() %>% 
+  separate(grna_target, c("gRNA_ID", "Garbage"), sep = "_", remove = FALSE) %>% 
+  dplyr::select(!Garbage) 
+
+df <- df %>% 
+  dplyr::select(!significant) %>% 
+  distinct()
+
+One_Mb_Results <- df %>% 
+  mutate(q_value = p.adjust(p_value, method="BH"))
+
+One_Mb_Hits <- One_Mb_Results %>% 
+  filter(q_value < 0.1) 
+
+
+##Filter for 1Mb results involving the PT hit gRNAs
+
+PT_Hits_1MB_Results <- One_Mb_Results %>% 
+  filter(gRNA_ID %in% PT_Hits$gRNA_ID) %>% 
+  mutate(q_value = p.adjust(p_value, method="BH"))
+
+PT_Hits_1MB_Hits <- PT_Hits_1MB_Results %>% 
+  filter(q_value < 0.1) 
+
+write_csv(PT_Hits_1MB_Hits, "/Users/troymcdiarmid/Downloads/PT_Hits_1MB_Analysis.csv")
+
+##Create a new column for gRNA_ID and linked upregulated target 
+
+PT_Hits_1MB_Hits <- PT_Hits_1MB_Hits %>% 
+  unite(gRNA_ID_Target_Gene, c("gRNA_ID", "response_id"), remove = FALSE)
+
+##Create the same columns for PT hits
+
+PT_Hits <- PT_Hits %>% 
+  unite(gRNA_ID_Target_Gene, c("gRNA_ID", "Ensembl_Id"), remove = FALSE) 
+
+##See how many 1MB upregulations are also PT hits 
+
+PT_Hits_Also_1MB_Hits <- PT_Hits %>% 
+  filter(gRNA_ID_Target_Gene %in% PT_Hits_1MB_Hits$gRNA_ID_Target_Gene) %>% 
+  filter(!gRNA_Start == 45619857)
+
+
+##How many of these upregulated more than 1 target gene
+
+Upregulations_Per_gRNA <- PT_Hits_1MB_Hits %>% count(gRNA_ID)
+
+Multiple_Upregulation_gRNAs <- Upregulations_Per_gRNA  %>% 
+  filter(n > 1)
+
+write_csv(Multiple_Upregulation_gRNAs, "/Users/troymcdiarmid/Downloads/Multiple_Upregulation_gRNAs.csv")
+
+##Specific gRNAs 
+
+Specific_PT_Hits <- PT_Hits %>% 
+  filter(gRNA_ID %in% PT_Hits_1MB_Hits$gRNA_ID) %>% 
+  filter(!gRNA_ID %in% Multiple_Upregulation_gRNAs$gRNA_ID) %>% 
+  filter(!gRNA_Start == 45619857)
+
+length(unique(Specific_PT_Hits$Target_Gene))
+
+##Proportion activating gRNAs that are specific within 1Mb
+
+(501-68)/501 
+
+length(unique(Specific_PT_Hits$gRNA_ID)) / length(unique(PT_Hits_Also_1MB_Hits$gRNA_ID))
+
+
+##Proportion of activateable genes for which we identified a specific gRNA 
+
+190/200 
+
+length(unique(Specific_PT_Hits$Target_Gene))/length(unique(PT_Hits$Target_Gene))
+
+##Which of the 200 genes did we not find a specific gRNA for 
+
+Non_Specific_Activateable_Genes <- PT_Hits %>% filter(!Target_Gene %in% Specific_PT_Hits$Target_Gene) %>% 
+  distinct(Target_Gene, .keep_all = TRUE) 
+
+##Add a column to hit table saying it was specific 
+
+Non_Specific_PT_Hits <- PT_Hits %>% 
+  filter(!gRNA_ID %in% Specific_PT_Hits$gRNA_ID)
+
+Non_Specific_PT_Hits$Specific_1Mb <- FALSE
+Specific_PT_Hits$Specific_1Mb <- TRUE
+
+PT_Hits_Specific_Annotated <- rbind(Specific_PT_Hits,Non_Specific_PT_Hits) 
+
+##Filter for those that were not significant at 1Mb 
+
+Not_Sig_1Mb_PT_Hits_Specific_Annotated <- PT_Hits_Specific_Annotated %>% 
+  filter(!gRNA_ID %in% PT_Hits_Also_1MB_Hits$gRNA_ID)
+
+Not_Sig_1Mb_PT_Hits_Specific_Annotated$Specific_1Mb <- NA
+
+Sig_1Mb_PT_Hits_Specific_Annotated <- PT_Hits_Specific_Annotated %>% 
+  filter(gRNA_ID %in% PT_Hits_Also_1MB_Hits$gRNA_ID) 
+
+PT_Hits_Specific_Annotated <- rbind(Not_Sig_1Mb_PT_Hits_Specific_Annotated, Sig_1Mb_PT_Hits_Specific_Annotated)
+
+write_csv(PT_Hits_Specific_Annotated, "/Users/troymcdiarmid/Downloads/Table_S6_CRISPRa_Activating_gRNAs.csv")
+
+```
+
+
+```{r}
+##Fig. S3o Specificity stacked bar chart  
+ 
+# create a dataset
+X <- "gRNA_Class"
+gRNA_Class <- rep(c("TSS", "Enhancer", "All_gRNAs", "Genes"), 1)
+value <- c(0.85, 0.92, 0.86, 0.95)
+gRNA_Specificity <- data.frame(X,gRNA_Class,value)
+ 
+gRNA_Specificity$gRNA_Class <- factor(gRNA_Specificity$gRNA_Class, levels = c("TSS", "Enhancer", "All_gRNAs", "Genes"))
+
+# Stacked
+ggplot(gRNA_Specificity, aes(x = gRNA_Class, y = value, fill = gRNA_Class)) +
+  theme_classic() +
+  geom_bar(stat = "identity", lwd = 0.8, width = 0.4) +
+  scale_fill_manual(values=c("#E69F00", "#56B4E9", "#D2D5D5", "#D2D5D5")) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 39)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,1)) +
+  labs(title = "", x = "", y = "") 
+ ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S3_Specificity_Bar.jpeg", width = 8, height = 7)
+
+```
+
+
+```{r}
+##How many CREs did we find multiple significant gRNAs for? 
+
+Hit_Promoter_gRNAs_Per_Gene <- PT_Hits_Specific_Annotated %>% 
+  filter(Target_CRE_Class == "Promoter") %>% 
+  group_by(Target_Gene) %>% 
+  count() 
+
+
+##How many enhancers did we identified multiple independently significant gRNAs for? 
+
+Hit_gRNAs_Per_Enhancer <- PT_Hits_Specific_Annotated %>% 
+  filter(Target_CRE_Class == "Enhancer") %>% 
+  group_by(Target_cCRE_Coordinates) %>% 
+  count() 
+
+
+##Then do the same for TSSs, which first requires mapping them 
+
+##Mapping TSSs
+
+TSS_Coordinates <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.bed", col_names = FALSE) %>% 
+  separate(X1, into = c("chrom", "chrom_number"), sep = 3) %>% 
+  dplyr::select(1:4) %>% 
+  mutate(TSS_Length = X3 - X2) 
+
+##Add index column
+
+TSS_Coordinates$TSS_ID <- seq.int(nrow(TSS_Coordinates))
+
+##Read in hit gRNAs
+
+K562_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S6_CRISPRa_Activating_gRNAs.csv") %>% 
+  filter(Target_CRE_Class == "Promoter") %>% 
+  dplyr::select(target_guide = gRNA_ID, target_gene = Target_Gene, Chromosome, start = gRNA_Start, end = gRNA_End) %>% 
+  dplyr::rename(chrom_number = Chromosome) 
+  
+
+##Join TSS_Coordinates and hit list inclusively, then filter for gRNAs that fall within the TSSs
+
+TSS_gRNA_Mappings <- TSS_Coordinates %>% 
+  left_join(K562_Hits, by = "chrom_number") %>% 
+  dplyr::filter(start > X2) %>% 
+  dplyr::filter(start < X3) 
+
+length(unique(TSS_gRNA_Mappings$TSS_ID))
+
+Non_NDD_TSS_Hits <- K562_Hits %>% dplyr::filter(!target_guide %in% TSS_gRNA_Mappings$target_guide)
+
+
+Hit_gRNAs_Per_TSS <- TSS_gRNA_Mappings %>% 
+  group_by(TSS_ID) %>% 
+  count() 
+
+
+```
+
+
+
+
+

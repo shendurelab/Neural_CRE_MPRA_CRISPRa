@@ -1,0 +1,533 @@
+---
+title: "Fig_S2_Visualization"
+author: "Troy McDiarmid"
+date: "2023-10-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggrepel)
+library(UpSetR)
+library(ComplexHeatmap)
+library(Gviz)
+library(GenomicInteractions)
+library(GenomicRanges)
+library(InteractionSet)
+library(tidyverse)
+library(biomaRt)
+library(readxl)
+library(sjmisc)
+library(scales)
+```
+
+
+```{r}
+##Fig. S2c-e scatter plots First correlation
+
+##Read in de novo variant data
+
+MPRA_Data <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Neurohub_CRISPRa_CRT_MPRA_Results.csv")
+
+##Remove sequences with low BC counts
+
+MPRA_Data <- MPRA_Data %>% 
+  drop_na(Is_Active)
+
+cor.test(MPRA_Data$Rep1_Log2_Count_Ratio, MPRA_Data$Rep2_Log2_Count_Ratio, method = "pearson")
+cor.test(MPRA_Data$Rep1_Log2_Count_Ratio, MPRA_Data$Rep3_Log2_Count_Ratio, method = "pearson")
+cor.test(MPRA_Data$Rep2_Log2_Count_Ratio, MPRA_Data$Rep3_Log2_Count_Ratio, method = "pearson")
+
+cor.test(MPRA_Data$Rep1_Log2_Count_Ratio, MPRA_Data$Rep2_Log2_Count_Ratio, method = "spearman")
+cor.test(MPRA_Data$Rep1_Log2_Count_Ratio, MPRA_Data$Rep3_Log2_Count_Ratio, method = "spearman")
+cor.test(MPRA_Data$Rep2_Log2_Count_Ratio, MPRA_Data$Rep3_Log2_Count_Ratio, method = "spearman")
+
+ggplot(MPRA_Data, aes(x = Rep1_Log2_Count_Ratio, y = Rep2_Log2_Count_Ratio)) +
+  geom_point(shape = 16, stroke = NA, size = 0.75, color = "black", alpha = 0.12) +
+  scale_x_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,6.5)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,6.5)) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 39), plot.margin = margin(0, 15, 0, 20))  
+  ggsave("Rep_1_2_Corr.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+  
+ggplot(MPRA_Data, aes(x = Rep1_Log2_Count_Ratio, y = Rep3_Log2_Count_Ratio)) +
+  geom_point(shape = 16, stroke = NA, size = 0.75, color = "black", alpha = 0.12) +
+  scale_x_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,6.5)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,6.5)) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 39), plot.margin = margin(0, 15, 0, 20))  
+  ggsave("Rep_1_3_Corr.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+  
+ggplot(MPRA_Data, aes(x = Rep2_Log2_Count_Ratio, y = Rep3_Log2_Count_Ratio)) +
+  geom_point(shape = 16, stroke = NA, size = 0.75, color = "black", alpha = 0.12) +
+  scale_x_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,6.5)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,6.5)) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 39), plot.margin = margin(0, 15, 0, 20))  
+  ggsave("Rep_2_3_Corr.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+  
+
+
+##Fig. S2k CRT genes per active enhancer 
+  
+MPRA_Data <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Neurohub_CRISPRa_CRT_MPRA_Results.csv")
+
+MPRA_Top_10_Tiles <- MPRA_Data %>% 
+  filter(Sequence_Class == "Test") %>% 
+  mutate(Oligo_P_Rank = percent_rank(Average_Log2_Count_Ratio)) %>% 
+  filter(Oligo_P_Rank > 0.89999999999999) %>% 
+  distinct(CRS_Coordinates_hg38, .keep_all = TRUE) %>% 
+  dplyr::select(GW18_PFC_ABC:Midfetal_Cortex_Trevino)
+
+
+##Making count of number of CRSs per CRT canadidate gene
+
+MPRA_Top_10_Tile_CRSs <- MPRA_Data %>% 
+  filter(Sequence_Class == "Test") %>% 
+  mutate(Oligo_P_Rank = percent_rank(Average_Log2_Count_Ratio)) %>% 
+  filter(Oligo_P_Rank > 0.89999999999999) %>% 
+  distinct(CRS_Coordinates_hg38, .keep_all = TRUE)
+
+##Separate then pivot it longer to get the number of genes 
+
+MPRA_Top_10_Tile_CRSs_2 <- MPRA_Top_10_Tile_CRSs %>% 
+  separate(Merged_Gene_List, into = c("Paired_Gene_1", "Paired_Gene_2", "Paired_Gene_3", "Paired_Gene_4", "Paired_Gene_5", "Paired_Gene_6"), sep = ",")
+
+MPRA_Top_10_Tile_CRSs_2 <- MPRA_Top_10_Tile_CRSs_2 %>% 
+  pivot_longer(Paired_Gene_1:Paired_Gene_6, names_to = "Paired_Number", values_to = "Paired_Genes")
+
+##Check there are still 2422 active tiles 
+
+length(unique(MPRA_Top_10_Tile_CRSs_2$CRS_Coordinates_hg38))
+
+MPRA_Top_10_Tile_CRSs_2_Count <- MPRA_Top_10_Tile_CRSs_2 %>% 
+  drop_na(Paired_Genes) %>% 
+  group_by(CRS_Coordinates_hg38) %>% 
+  dplyr::count()
+
+MPRA_Top_10_Tile_CRSs_2_Count_2 <- MPRA_Top_10_Tile_CRSs_2_Count %>% 
+  ungroup() %>% 
+  group_by(n) %>% 
+  dplyr::count()
+
+ggplot(MPRA_Top_10_Tile_CRSs_2_Count_2, aes(y=nn, x=n)) + 
+  geom_bar(position="stack", stat="identity", fill = "#D2D5D5", width = 0.5) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.9)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.9)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  scale_x_continuous(breaks = c(1,2,3,4,5,6)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 39)) 
+ggsave("Fig_2_CRT_Genes_Per_Active_Enhancer_Bar.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+  
+```  
+
+
+```{r}
+##Fig. S2f Boxplot of MPRA activity by sequence class 
+
+##First calculate median activity of scrambled controls 
+
+MPRA_Data <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Neurohub_CRISPRa_CRT_MPRA_Results.csv") %>% 
+  drop_na(Average_Log2_Count_Ratio) 
+
+Scrambled_MPRA_Data_BP <- MPRA_Data %>% 
+  filter(Sequence_Class %in% c("Scrambled"))
+
+
+MPRA_Data_BP <- MPRA_Data %>% 
+  filter(Sequence_Class %in% c("Scrambled", "HAR_Negative", "HAR_Positive", "Inoue_Negative", "Inoue_Positive", "Test"))
+
+MPRA_Data_BP$Sequence_Class <- factor(MPRA_Data_BP$Sequence_Class, levels = c("Scrambled", "HAR_Negative", "HAR_Positive", "Inoue_Negative", "Inoue_Positive", "Test"))
+  
+ggplot(MPRA_Data_BP, aes(y = Sequence_Class, x = Average_Log2_Count_Ratio, fill = Sequence_Class)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#D2D5D5", "#999999", "#999999", "#999999", "#999999", "#56B4E9")) +
+  geom_boxplot(colour = "black", width = 0.6, lwd =0.5) +
+  geom_vline(xintercept=median(Scrambled_MPRA_Data_BP$Average_Log2_Count_Ratio), linetype='dashed', col = 'black', size = 0.75) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_x_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  theme(axis.text.y=element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/MPRA_Class_Boxplot.jpeg", width = 5, height = 5)
+
+pairwise.t.test(MPRA_Data_BP$Average_Log2_Count_Ratio, MPRA_Data_BP$Sequence_Class, p.adjust.method = "BH")
+
+pairwise.wilcox.test(MPRA_Data_BP$Average_Log2_Count_Ratio, MPRA_Data_BP$Sequence_Class, p.adjust.method = "BH") 
+
+MPRA_Data_Inoue_Pos <- MPRA_Data %>% 
+  filter(Sequence_Class == "Inoue_Positive")
+
+MPRA_Data_Inoue_Neg <- MPRA_Data %>% 
+  filter(Sequence_Class == "Inoue_Negative")
+
+MPRA_Data_Har_Pos <- MPRA_Data %>% 
+  filter(Sequence_Class == "HAR_Positive")
+
+MPRA_Data_Test <- MPRA_Data %>% 
+  filter(Sequence_Class == "Test")
+
+MPRA_Scrambled <- MPRA_Data %>% 
+  filter(Sequence_Class == "Scrambled")
+
+MPRA_Data_Har_Neg <- MPRA_Data %>% 
+  filter(Sequence_Class == "HAR_Negative")
+
+median(MPRA_Data_Inoue_Pos$Average_Log2_Count_Ratio) / median(MPRA_Scrambled$Average_Log2_Count_Ratio)
+median(MPRA_Data_Har_Pos$Average_Log2_Count_Ratio) / median(MPRA_Scrambled$Average_Log2_Count_Ratio)
+median(MPRA_Data_Test$Average_Log2_Count_Ratio) / median(MPRA_Scrambled$Average_Log2_Count_Ratio)
+
+
+mean(MPRA_Data_Inoue_Pos$Average_Log2_Count_Ratio) / mean(MPRA_Scrambled$Average_Log2_Count_Ratio)
+mean(MPRA_Data_Har_Pos$Average_Log2_Count_Ratio) / mean(MPRA_Scrambled$Average_Log2_Count_Ratio)
+mean(MPRA_Data_Inoue_Neg$Average_Log2_Count_Ratio) / mean(MPRA_Scrambled$Average_Log2_Count_Ratio)
+mean(MPRA_Data_Har_Neg$Average_Log2_Count_Ratio) / mean(MPRA_Scrambled$Average_Log2_Count_Ratio)
+mean(MPRA_Data_Test$Average_Log2_Count_Ratio) / mean(MPRA_Scrambled$Average_Log2_Count_Ratio)
+
+
+##How many are significant 
+
+MPRA_Data_Sig <- MPRA_Data %>% 
+  filter(Is_Active == TRUE)
+
+length(unique(MPRA_Data_Sig$Test_Sequence))
+length(unique(MPRA_Data_Sig$CRS_Coordinates_hg38))
+
+##MPRA data top 10% 
+
+MPRA_Data_Top_10_Percent <- MPRA_Data %>%
+  filter(Sequence_Class == "Test") %>% 
+  slice_max(prop = 0.1, order_by = Average_Log2_Count_Ratio)
+
+length(unique(MPRA_Data_Top_10_Percent$CRS_Coordinates_hg38)) 
+
+mean(min(MPRA_Data_Top_10_Percent$Average_Log2_Count_Ratio)) / mean(MPRA_Scrambled$Average_Log2_Count_Ratio)
+mean(max(MPRA_Data_Top_10_Percent$Average_Log2_Count_Ratio)) / mean(MPRA_Scrambled$Average_Log2_Count_Ratio)
+
+
+##CHD2 in vivo validated enhancer, number of tiles and number of top 10% tiles 
+
+CHD2_MPRA_Data <- MPRA_Data %>% 
+  filter(CRS_Coordinates_hg38 == "chr15:92831409-92832242")
+
+Top10_CHD2_MPRA_Data <- MPRA_Data_Top_10_Percent %>% 
+  filter(CRS_Coordinates_hg38 == "chr15:92831409-92832242")
+
+##AUTS2 in vivo validated enhancer, number of tiles and number of top 10% tiles 
+
+AUTS2_MPRA_Data <- MPRA_Data %>% 
+  filter(CRS_Coordinates_hg38 == "chr7:68336601-68337101")
+
+Top10_AUTS2_MPRA_Data <- MPRA_Data_Top_10_Percent %>% 
+  filter(CRS_Coordinates_hg38 == "chr7:68336601-68337101")
+  
+```
+
+
+```{r}
+
+##Fig. S2b histogram of barcodes per CRS
+
+### (7) Load results from MPRA and combine into a single dataframe #####################################################
+
+library(gridExtra)
+library(data.table)
+
+# Load results from MPRA sequencing run 1
+mpra_run1 <- fread(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_ExN_14DIV_final_labeled_counts_run1.txt",
+                   select = c(1, 4:9))
+colnames(mpra_run1) <- c("CRS", "DNA_S1_B1", "DNA_S2_B1", "DNA_S3_B1", "RNA_S1_B1", "RNA_S2_B1", "RNA_S3_B1")
+
+# Load results from MPRA sequencing run 2
+mpra_run2 <- fread(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_ExN_14DIV_final_labeled_counts_run2.txt",
+                   select = c(1, 4:9))
+colnames(mpra_run2) <- c("CRS", "DNA_S1_B2", "DNA_S2_B2", "DNA_S3_B2", "RNA_S1_B2", "RNA_S2_B2", "RNA_S3_B2")
+
+# Replace NA values with 0
+mpra_run1[is.na(mpra_run1)] <- 0
+mpra_run2[is.na(mpra_run2)] <- 0
+
+# Remove CRSs with no barcode
+mpra_run1 <- mpra_run1[which(mpra_run1$CRS != "no_BC"),]
+mpra_run2 <- mpra_run2[which(mpra_run2$CRS != "no_BC"),]
+
+# get the number of DNA counts per barcode
+get_barcode_count <- rbind(mpra_run1, mpra_run2, use.names = FALSE)
+dim(get_barcode_count) # 15,040,363 barcodes
+DNA_counts_per_barcode <- data.frame("count" = rowSums(get_barcode_count[,c(2:4)]))
+summary(DNA_counts_per_barcode$count)
+
+ggplot(DNA_counts_per_barcode, aes(x = count)) + 
+  geom_histogram(binwidth = 1, color = "#56B4E9", fill = "#56B4E9") +
+  scale_y_continuous(breaks = c(0 , 2000000, 4000000), labels = c("0", "2e+6", "4e+6")) +
+  xlab("# counts") + ylab("# DNA barcodes") +
+  theme_classic() +
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 14),
+        axis.text.y = element_text(size = 14))
+
+# get the number of RNA counts per barcode
+RNA_counts_per_barcode <- data.frame("count" = rowSums(get_barcode_count[,c(5:7)]))
+summary(RNA_counts_per_barcode$count)
+
+ggplot(RNA_counts_per_barcode, aes(x = count)) + 
+  geom_histogram(binwidth = 1, color = "#56B4E9", fill = "#56B4E9") +
+  scale_y_continuous(breaks = c(0 , 100000, 300000), labels = c("0", "1e+5", "3e+5")) +
+  xlab("# counts") + ylab("# RNA barcodes") +
+  theme_classic() +
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 14),
+        axis.text.y = element_text(size = 14))
+
+# Get the number of DNA barcodes per CRS
+barcodes_per_CRS <- get_barcode_count %>% dplyr::count(CRS) 
+
+ggplot(barcodes_per_CRS, aes(x = n)) + 
+  geom_histogram(binwidth = 1, color = "#56B4E9", fill = "#56B4E9") +
+  xlab("# barcodes") + ylab("# CRSs") +
+  theme_classic() +
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 14),
+        axis.text.y = element_text(size = 14))
+
+# merge barcodes to get CRS levels results for sequencing run 1
+summary_run1 <- mpra_run1 %>% group_by(CRS) %>% 
+  summarise_if(is.numeric, sum)
+summary_run1 <- data.frame(summary_run1)
+
+# create entry for CRS that is missing in sequencing batch 1
+summary_run1 <- rbind(summary_run1,
+                      data.frame("CRS" = "GW18_PFC_ABC::chr3:125141315-125141585",
+                                 "DNA_S1_B1" = 0,
+                                 "DNA_S2_B1" = 0,
+                                 "DNA_S3_B1" = 0,
+                                 "RNA_S1_B1" = 0, 
+                                 "RNA_S2_B1" = 0,
+                                 "RNA_S3_B1" = 0))
+
+# merge barcodes to get CRS levels results for sequencing run 2
+summary_run2 <- mpra_run2 %>% group_by(CRS) %>% 
+  summarise_if(is.numeric, sum)
+summary_run2 <- data.frame(summary_run2)
+
+# order results from sequencing run 1 and 2
+summary_run1 <- summary_run1[order(summary_run1$CRS),]
+summary_run2 <- summary_run2[order(summary_run2$CRS),]
+
+# Double check that row names are the same for sequencing run 1 and 2
+for(i in 1:dim(summary_run1)[1]){
+  if(summary_run1$CRS[i] != summary_run2$CRS[i]){
+    print(i)
+    break
+  }
+} # looks okay
+
+# merge the sequencing runs into a single dataframe
+mpra_results <- cbind(summary_run1, summary_run2[,2:7])
+
+# add columns for the DNA and RNA count totals
+mpra_results$DNA_S1_Total <- mpra_results$DNA_S1_B1 + mpra_results$DNA_S1_B2
+mpra_results$DNA_S2_Total <- mpra_results$DNA_S2_B1 + mpra_results$DNA_S2_B2
+mpra_results$DNA_S3_Total <- mpra_results$DNA_S3_B1 + mpra_results$DNA_S3_B2
+mpra_results$RNA_S1_Total <- mpra_results$RNA_S1_B1 + mpra_results$RNA_S1_B2
+mpra_results$RNA_S2_Total <- mpra_results$RNA_S2_B1 + mpra_results$RNA_S2_B2
+mpra_results$RNA_S3_Total <- mpra_results$RNA_S3_B1 + mpra_results$RNA_S3_B2
+
+# add columns for the average number of DNA and RNA counts
+mpra_results$DNA_Average <- rowSums(mpra_results[,c(14:16)]) / 3
+mpra_results$RNA_Average <- rowSums(mpra_results[,c(17:19)]) / 3
+
+# calculate the log2 count ratios for each replicate
+mpra_results$Rep1_Log2_Count_Ratio <- log2((mpra_results$RNA_S1_Total + 1) / (mpra_results$DNA_S1_Total + 1))
+mpra_results$Rep2_Log2_Count_Ratio <- log2((mpra_results$RNA_S2_Total + 1) / (mpra_results$DNA_S2_Total + 1))
+mpra_results$Rep3_Log2_Count_Ratio <- log2((mpra_results$RNA_S3_Total + 1) / (mpra_results$DNA_S3_Total + 1))
+
+# get the average log2 count ratio for each CRS and order the results table
+mpra_results$Average_Log2_Count_Ratio <- rowSums(mpra_results[,c(22:24)]) / 3
+mpra_results <- mpra_results[order(mpra_results$Average_Log2_Count_Ratio, decreasing = TRUE),]
+
+
+# plot the number of barcodes per CRS for DNA replicates
+
+DNA_1 <- get_barcode_count[which(DNA_S1_B1 > 0), c(1,2)]
+DNA_1_unique_barcodes_per_crs <- as.data.frame(table(DNA_1$CRS))
+colnames(DNA_1_unique_barcodes_per_crs) <- c("CRS", "unique_barcodes")
+
+DNA_1 <- ggplot(DNA_1_unique_barcodes_per_crs, aes(x = unique_barcodes)) + 
+  geom_histogram(binwidth = 1, color = "#56B4E9", fill = "#56B4E9") +
+  geom_vline(xintercept = mean(DNA_1_unique_barcodes_per_crs$unique_barcodes), color = "red") + 
+  xlab("# counts") + ylab("# DNA barcodes") +
+  theme_classic() +
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 14),
+        axis.text.y = element_text(size = 14))
+DNA_1
+
+
+DNA_2 <- get_barcode_count[which(DNA_S2_B1 > 0), c(1,2)]
+DNA_2_unique_barcodes_per_crs <- as.data.frame(table(DNA_2$CRS))
+colnames(DNA_2_unique_barcodes_per_crs) <- c("CRS", "unique_barcodes")
+
+DNA_2 <- ggplot(DNA_2_unique_barcodes_per_crs, aes(x = unique_barcodes)) + 
+  geom_histogram(binwidth = 1, color = "#56B4E9", fill = "#56B4E9") +
+  geom_vline(xintercept = mean(DNA_2_unique_barcodes_per_crs$unique_barcodes), color = "red") + 
+  xlab("# counts") + ylab("# DNA barcodes") +
+  theme_classic() +
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 14),
+        axis.text.y = element_text(size = 14))
+DNA_2
+
+
+DNA_3 <- get_barcode_count[which(DNA_S3_B1 > 0), c(1,2)]
+DNA_3_unique_barcodes_per_crs <- as.data.frame(table(DNA_3$CRS))
+colnames(DNA_3_unique_barcodes_per_crs) <- c("CRS", "unique_barcodes")
+
+DNA_3 <- ggplot(DNA_3_unique_barcodes_per_crs, aes(x = unique_barcodes)) + 
+  geom_histogram(binwidth = 1, color = "#56B4E9", fill = "#56B4E9") +
+  geom_vline(xintercept = mean(DNA_3_unique_barcodes_per_crs$unique_barcodes), color = "red") + 
+  xlab("# counts") + ylab("# DNA barcodes") +
+  theme_classic() +
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 14),
+        axis.text.y = element_text(size = 14))
+DNA_3
+
+grid.arrange(DNA_1, DNA_2, DNA_3, ncol = 3)
+
+
+ggplot(DNA_1_unique_barcodes_per_crs, aes(x = unique_barcodes)) +
+geom_histogram(colour = "#D2D5D5", fill = "#D2D5D5", binwidth = 0.05) +
+  theme_classic() +
+  geom_vline(xintercept=median(DNA_1_unique_barcodes_per_crs$unique_barcodes), linetype='dashed', col = 'black', size = 0.75) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 36)) +
+  scale_y_continuous(breaks = c(0,1000,2000)) +
+  scale_x_continuous(trans='log10', limits = c(1,2000), breaks = c(1,10,100,1000))
+ggsave("Fig_S2_DNA_S1_Counts_MPRA.jpeg", width = 8, height = 3, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+ggplot(DNA_2_unique_barcodes_per_crs, aes(x = unique_barcodes)) +
+geom_histogram(colour = "#D2D5D5", fill = "#D2D5D5", binwidth = 0.05) +
+  theme_classic() +
+  geom_vline(xintercept=median(DNA_2_unique_barcodes_per_crs$unique_barcodes), linetype='dashed', col = 'black', size = 0.75) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 36)) +
+  scale_y_continuous(breaks = c(0,1000,2000)) +
+  scale_x_continuous(trans='log10', limits = c(1,2000), breaks = c(1,10,100,1000))
+ggsave("Fig_S2_DNA_S2_Counts_MPRA.jpeg", width = 8, height = 3, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+ggplot(DNA_3_unique_barcodes_per_crs, aes(x = unique_barcodes)) +
+geom_histogram(colour = "#D2D5D5", fill = "#D2D5D5", binwidth = 0.05) +
+  theme_classic() +
+  geom_vline(xintercept=median(DNA_3_unique_barcodes_per_crs$unique_barcodes), linetype='dashed', col = 'black', size = 0.75) +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 36)) +
+  scale_y_continuous(breaks = c(0,1000,2000)) +
+  scale_x_continuous(trans='log10', limits = c(1,2000), breaks = c(1,10,100,1000))
+ggsave("Fig_S2_DNA_S3_Counts_MPRA.jpeg", width = 8, height = 3, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+
+
+summary(DNA_1_unique_barcodes_per_crs)
+
+
+
+```
+
+
+
+```{r}
+##Fig. S2g Heatmap for feature correlations 
+
+##Neuron
+
+MPRA_Chrom_Feature <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/mpra_chromatin_correlation_table_neuron.txt")
+
+ggplot(MPRA_Chrom_Feature, aes(x = reorder(dataset, -spearman), y = 1, fill = spearman)) +
+  theme_void() +
+  geom_tile() +
+    scale_fill_gradientn(colours = c("#55AFF4","white","red"), 
+                         values = rescale(c(-0.02,0,0.04)),
+                         guide = "colorbar", limits=c(-0.02, 0.04)) + 
+  theme(axis.ticks.length=unit(0, "cm")) +
+  theme(axis.text.x = element_text(family="Arial", colour = "black", size = 14, angle = 90, hjust = 1, face = "italic", margin = margin(t = 5))) +
+  labs(title = "", x = "", y = "") 
+ggsave("Neuron_Feature_Corr_Heatmap.jpeg", width = 17, height = 1.55, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+ggplot(MPRA_Chrom_Feature, aes(x = reorder(dataset, spearman), y = 1, fill = spearman)) +
+  theme_void() +
+  geom_tile() +
+  scale_fill_gradientn(colours = c("#55AFF4","white","red"), 
+                         values = rescale(c(-0.02,0,0.04)),
+                         guide = "colorbar", limits=c(-0.02, 0.04)) + 
+  theme(axis.ticks.length=unit(0, "cm")) +
+  labs(title = "", x = "", y = "") 
+ggsave("Neuron_Feature_Corr_Heatmap_legend.jpeg", width = 38, height = 2, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+
+
+```
+
+```{r}
+##Fig. S2h odds ratio graph
+
+Vista_Overlap <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/mpra_activity_vista_enhancer_overlap.txt")
+
+
+ggplot(Vista_Overlap, aes(x=tissue, y=OR)) + 
+  geom_bar(position="stack", stat="identity", fill = "#D2D5D5", width = 0.3) +
+  geom_errorbar(min=Vista_Overlap$lower_conf, max = Vista_Overlap$upper_conf, width = 0) +
+  geom_hline(yintercept=1, linetype='dashed', col = 'black', size = 0.75) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.7)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.7)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  scale_y_continuous(breaks = c(0,1,2,3,4,5,6), limits = c(0,6), labels = scales::number_format(accuracy = 0.1)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 39)) 
+ggsave("OR_Vista_Overlap.jpeg", width = 9, height = 6.3, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+
+```
+

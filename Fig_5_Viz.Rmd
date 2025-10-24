@@ -1,0 +1,1776 @@
+---
+title: "Fig_5_Visualization"
+author: "Troy McDiarmid"
+date: "2023-10-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggrepel)
+library(UpSetR)
+library(ComplexHeatmap)
+library(Gviz)
+library(GenomicInteractions)
+library(GenomicRanges)
+library(InteractionSet)
+library(tidyverse)
+library(biomaRt)
+library(readxl)
+library(sjmisc)
+library(Matrix)
+library(sceptre)
+library(VGAM)
+library(hdf5r)
+library(Seurat)
+library(cowplot)
+library(ggridges)
+```
+
+```{r}
+
+##Read in hits
+
+Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv")
+
+##Read in processed gRNA and GEX FBC matrices
+  
+Gene_Matrix <- readRDS("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Scaled_Screen_gene_Matrix.mtx")
+gRNA_Matrix <- readRDS("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Scaled_Screen_gRNA_Matrix.mtx")
+
+```
+
+
+```{r}
+
+##Fig. 5a CHD8 Gviz
+
+##Gviz plot 
+
+# Set genomic coordinates for plotting
+symbol = "CHD8"
+genome = "hg38"
+chrom = "chr14"
+chromStart = 21300000
+chromEnd = 21525000
+
+
+# load biomaRt data from ensembl
+biomart = biomaRt::useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
+
+biomart = useEnsembl(biomart = "ensembl", dataset = "hsapiens_gene_ensembl", mirror = "useast")
+
+# create an ideogram track to display chromosome
+#iTrack <- IdeogramTrack(genome = genome, chromosome = chrom, name = chrom)
+
+# create a genome axis track to display chromosome coordinates
+gTrack <- GenomeAxisTrack()
+
+# create track with ensembl genes
+biomTrack <- BiomartGeneRegionTrack(genome = genome, chromosome = chrom, name = "ENSEMBL", 
+                                    filter = list(with_refseq_mrna=TRUE), biomart = biomart)
+
+
+
+### (2) Create plot of candidate enhancers, only show contacts for CRT gene list #############################
+
+# Get the list of CRT candidate genes within the genomic window
+CRISPRa_CRT_candidates <- data.frame(read_xlsx(path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.xlsx", sheet = "Candidate_Genes"))
+CRISPRa_CRT_candidates$gene_symbol[which(CRISPRa_CRT_candidates$chrom == chrom & CRISPRa_CRT_candidates$start_hg38 > chromStart & CRISPRa_CRT_candidates$end_hg38 < chromEnd)]
+
+# Get all 5,425 candidate enhancers of CRT genes
+candidate_enhancers_for_CRT_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/candidate_enhancer_regions_for_CRISPRa_CRT_genes.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name"))
+
+# Filter the genomic window of candidate enhancers for plotting
+candidate_enhancers_for_CRT_genes <- candidate_enhancers_for_CRT_genes[which(candidate_enhancers_for_CRT_genes$chrom == chrom & candidate_enhancers_for_CRT_genes$chromStart > chromStart & candidate_enhancers_for_CRT_genes$chromEnd < chromEnd),]
+
+# Create regulatory element annotation track
+REtrack <- AnnotationTrack(start = candidate_enhancers_for_CRT_genes$chromStart, 
+                           end = candidate_enhancers_for_CRT_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Candidate Regulatory Elements") 
+
+
+# Get all 761 TSSs of CRT genes
+TSSs_for_CRT_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name", "number", "strand")) %>% 
+  type_convert()
+
+# Filter the genomic window of candidate enhancers for plotting
+TSSs_for_CRT_genes <- TSSs_for_CRT_genes[which(TSSs_for_CRT_genes$chrom == chrom & TSSs_for_CRT_genes$chromStart > chromStart & TSSs_for_CRT_genes$chromEnd < chromEnd),]
+
+# Create TSS annotation track
+TSStrack <- AnnotationTrack(start = TSSs_for_CRT_genes$chromStart, 
+                           end = TSSs_for_CRT_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Transcription_Start_Sites") 
+
+
+
+# Create genomic interaction dataframe for each candidate enhancer dataset
+GW18_PFC_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/gw18_pfc_ABC_Score_liftOver_hg38_NDD.bedpe",
+                                                type = "bedpe", experiment_name = "GW18_PFC", description = "ABC_Score")
+WTC11_iNeuron_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/NGN2-neuron_ABC_Score_hg38_MPRA_CRISPRa_validated_for_Gviz.bedpe",
+                                                     type = "bedpe", experiment_name = "WTC11_iNeuron", description = "ABC_Score")
+Cicero_Fetal_Cerebrum_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/midfetal_cerebrum_ExN_Cicero_liftOver_hg38_NDD.bedpe",
+                                                             type = "bedpe", experiment_name = "Cicero_Fetal_Cerebrum", description = "Cicero")
+Trevino_Fetal_Cortex_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/trevino_fetal_cortex_enhancer_predictions_NDD.bedpe",
+                                                            type = "bedpe", experiment_name = "Trevino_Fetal_Cortex", description = "Correlation")
+Ziffra_Fetal_Cortex_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/ziffra_fetal_human_cortex_ABC_Score_NDD_for_gviz_figures_only.bedpe",
+                                                           type = "bedpe", experiment_name = "Ziffra_Fetal_Cortex", description = "ABC_Score")
+
+# only plot positive scores for Trevino
+Trevino_Fetal_Cortex_NDD <- Trevino_Fetal_Cortex_NDD[which(Trevino_Fetal_Cortex_NDD@elementMetadata$counts > 0),]
+
+# the height of the interaction plot represents the score from each prioritization method
+summary(GW18_PFC_NDD@elementMetadata$counts)
+summary(WTC11_iNeuron_NDD@elementMetadata$counts)
+summary(Cicero_Fetal_Cerebrum_NDD@elementMetadata$counts)
+summary(Trevino_Fetal_Cortex_NDD@elementMetadata$counts)
+summary(Ziffra_Fetal_Cortex_NDD@elementMetadata$counts)
+
+# Create interaction tracks for each candidate enhancer dataset
+GW18_PFC_NDD_interaction_track <- InteractionTrack(GW18_PFC_NDD, name = "GW18_PFC", chromosome = chrom)
+WTC11_iNeuron_NDD_interaction_track <- InteractionTrack(WTC11_iNeuron_NDD, name = "WTC11_iNeuron", chromosome = chrom)
+Cicero_Fetal_Cerebrum_NDD_interaction_track <- InteractionTrack(Cicero_Fetal_Cerebrum_NDD, name = "Cicero_Fetal_Cerebrum", chromosome = chrom)
+Trevino_Fetal_Cortex_NDD_interaction_track <- InteractionTrack(Trevino_Fetal_Cortex_NDD, name = "Trevino_Fetal_Cortex", chromosome = chrom)
+Ziffra_Fetal_Cortex_NDD_interaction_track <- InteractionTrack(Ziffra_Fetal_Cortex_NDD, name = "Ziffra_Fetal_Cortex", chromosome = chrom)
+
+# Show the available display parameters for a Gviz track
+# availableDisplayPars(gTrack)
+
+
+##Adding an ENCODE ATAC track
+
+
+bamFile <- "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_ATAC-seq_Song_2019_hg38.50bp_trim.merged.srt.nodup.no_chrM_MT.filtered.bw"
+ATAC_track <- DataTrack(range = bamFile, genome = genome, type = "l", 
+                     name = "ATAC", window = -1, 
+                     chromosome = chrom, type = "hist", 
+                    col.histogram = "black", 
+                    fill.histogram = "black", background.title = "white", 
+                    fontcolor.title = "black", ylim = c(0,5))
+class(ATAC_track)
+
+ATAC_track
+
+
+
+##Adding a H3k27Ac track
+
+
+bamFile <- "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_H3K27ac_CUT+RUN_Song_2019_hg38.srt.no_dups.filtered.bw"
+H3k27ac <- DataTrack(range = bamFile, genome = genome, type = "l", 
+                     name = "H3K27AC", window = -1, 
+                     chromosome = chrom, type = "hist", 
+                    col.histogram = "black", 
+                    fill.histogram = "black", background.title = "white", 
+                    fontcolor.title = "black", ylim = c(0,10))
+class(H3k27ac)
+
+H3k27ac
+
+
+##Then reading in the gRNA mappings and function data and generating the gRNA function score track
+
+gRNA_Coordinates <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Scaled_Screen_gRNA_coordinates.txt") %>% 
+  dplyr::rename(Chromosome = seqname, gRNA_Name = patternID) %>% 
+  separate(Chromosome, into = c("Chr", "Chromosome"),
+            sep= 3) %>%
+  arrange(gRNA_Name) 
+
+gRNA_Coordinates <- gRNA_Coordinates %>% 
+  separate(gRNA_Name, into = c("gRNA_ID", "gRNA_Name"), sep = "_", remove = FALSE) %>% 
+  type_convert()
+
+gRNA_DE_Results <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Results.csv") 
+
+gRNA_DE_Results <- gRNA_DE_Results %>% 
+  left_join(gRNA_Coordinates, by = "gRNA_ID")
+
+##convert ensg ids to hgnc symbols and filter
+
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes <- gRNA_DE_Results$response_id
+G_list <- getBM(filters= "ensembl_gene_id", attributes= c("hgnc_symbol", "ensembl_gene_id"), values=genes, mart= mart)
+
+G_list <- G_list %>% 
+  dplyr::rename(response_id = ensembl_gene_id) %>% 
+  dplyr::rename(target_gene = hgnc_symbol)
+
+gRNA_DE_Results <- gRNA_DE_Results %>% 
+  left_join(G_list, by = "response_id")
+
+gRNA_Data <- gRNA_DE_Results %>% 
+  filter(target_gene == symbol) %>% 
+  unite(gRNA_Gene_Pair, gRNA_ID, target_gene, remove = FALSE) 
+
+#gRNA_Data <- gRNA_Data %>%
+  #distinct(gRNA_Gene_Pair, .keep_all = TRUE)
+
+gRNA_Data <- gRNA_Data %>%
+  mutate(plot_pval = -log10(p_value))
+
+##Filtering for hits or non-hits and coloring 
+
+PT_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv")
+
+Promoter_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% filter(Target_CRE_Class == "Promoter")
+
+Enhancer_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% filter(Target_CRE_Class == "Enhancer")
+
+Promoter_Hits <- gRNA_Data %>% 
+  filter(gRNA_ID %in% Promoter_Hits$gRNA_ID)
+Promoter_Hits$Hit <- "Hit"
+
+Enhancer_Hits <- gRNA_Data %>% 
+  filter(gRNA_ID %in% Enhancer_Hits$gRNA_ID)
+Enhancer_Hits$Hit <- "Hit"
+
+Non_Hits <- gRNA_Data %>% 
+  filter(!gRNA_ID %in% PT_Hits$gRNA_ID) %>% 
+  filter(Chromosome == 14)
+Non_Hits$Hit <- "Non-Hit" 
+
+##Create hit and non-hit tracks and overlay them
+
+df1_label = "Non-Hit"
+df2_label = "Promoter_Hit"
+df3_label = "Enhancer_Hit"
+df1 <- Non_Hits
+df2 <- Promoter_Hits
+df3 <- Enhancer_Hits
+
+Promoter_Hit_Track <- DataTrack(data = Promoter_Hits$plot_pval, start = Promoter_Hits$start, end = Promoter_Hits$end, chromosome = chrom, genome = genome, groups = factor(df2_label,levels = c(df1_label, df2_label, df3_label)), col = "#E69F00", cex = 1.2, legend=FALSE, ylim = c(0,6), col.axis = "black", background = "white", fontcolor.title = "black", name = "-log10(P-values)", background.title = "white", col.frame = "white", fill = "white")
+
+Non_Hit_Track <- DataTrack(data = Non_Hits$plot_pval, start = Non_Hits$start, end = Non_Hits$end, chromosome = chrom, genome = genome, groups = factor(df1_label,levels = c(df1_label, df2_label)), col = "#999999", legend=FALSE, ylim = c(0,6), col.axis = "black", background = "white", fontcolor.title = "black", name = "-log10(P-values)", background.title = "white", col.frame = "white", fill = "white")
+
+overlapTracks <- OverlayTrack(trackList = list(Non_Hit_Track, Promoter_Hit_Track), legend= TRUE, background.title = "white", col.frame = "white", fill = "white")
+
+
+
+# Set track parameters for plotting
+displayPars(gTrack) <- list(fontsize = 6)
+displayPars(GW18_PFC_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(WTC11_iNeuron_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Cicero_Fetal_Cerebrum_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Trevino_Fetal_Cortex_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Ziffra_Fetal_Cortex_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(REtrack) <- list(col = "#56B4E9", fill = "#56B4E9", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(TSStrack) <- list(col = "#E69F00", fill = "#E69F00", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(biomTrack) <- list(background.title = "white", fontcolor.title = "black", col = "#999999", fill = "#999999", col.line = "#999999", utr3 = "#999999", utr5 = "#999999", protein_coding = "#999999")
+displayPars(ATAC_track) <- list(background.title = "white", fontcolor.title = "black")
+displayPars(H3k27ac) <- list(background.title = "white", fontcolor.title = "black")
+
+# Plot tracks for candidate enhancer regions of CRT genes only
+pdf("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_4_CHD8_candidate_enhancers_Gviz_CRT_genes_only.pdf", height = 3, width = 7)
+plotTracks(list(overlapTracks, WTC11_iNeuron_NDD_interaction_track, ATAC_track, H3k27ac, REtrack, TSStrack, biomTrack), 
+           stackHeight = 0.3, transcriptAnnotation = "symbol", from = chromStart, to = chromEnd, 
+           sizes = c(0.4, 0.15, 0.2, 0.2, 0.2, 0.2, 0.4), labelPos = "below")
+dev.off()
+
+
+```
+
+```{r}
+##Fig. 5c CTNND2 Gviz
+
+##Gviz plot 
+
+# Set genomic coordinates for plotting
+symbol = "CTNND2"
+genome = "hg38"
+chrom = "chr5"
+chromStart = 10300000
+chromEnd = 14100000
+
+# load biomaRt data from ensembl
+biomart = biomaRt::useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
+
+# create an ideogram track to display chromosome
+#iTrack <- IdeogramTrack(genome = genome, chromosome = chrom, name = chrom)
+
+# create a genome axis track to display chromosome coordinates
+gTrack <- GenomeAxisTrack()
+
+# create track with ensembl genes
+biomTrack <- BiomartGeneRegionTrack(genome = genome, chromosome = chrom, name = "ENSEMBL", 
+                                    filter = list(with_refseq_mrna=TRUE), biomart = biomart)
+
+
+
+### (2) Create plot of candidate enhancers, only show contacts for CRT gene list #############################
+
+# Get the list of CRT candidate genes within the genomic window
+CRISPRa_CRT_candidates <- data.frame(read_xlsx(path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.xlsx", sheet = "Candidate_Genes"))
+CRISPRa_CRT_candidates$gene_symbol[which(CRISPRa_CRT_candidates$chrom == chrom & CRISPRa_CRT_candidates$start_hg38 > chromStart & CRISPRa_CRT_candidates$end_hg38 < chromEnd)]
+
+# Get all 5,425 candidate enhancers of CRT genes
+candidate_enhancers_for_CRT_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/candidate_enhancer_regions_for_CRISPRa_CRT_genes.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name"))
+
+# Filter the genomic window of candidate enhancers for plotting
+candidate_enhancers_for_CRT_genes <- candidate_enhancers_for_CRT_genes[which(candidate_enhancers_for_CRT_genes$chrom == chrom & candidate_enhancers_for_CRT_genes$chromStart > chromStart & candidate_enhancers_for_CRT_genes$chromEnd < chromEnd),]
+
+# Create regulatory element annotation track
+REtrack <- AnnotationTrack(start = candidate_enhancers_for_CRT_genes$chromStart, 
+                           end = candidate_enhancers_for_CRT_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Candidate Regulatory Elements") 
+
+
+# Get all 761 TSSs of CRT genes
+TSSs_for_CRT_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name", "number", "strand")) %>% 
+  type_convert()
+
+# Filter the genomic window of candidate enhancers for plotting
+TSSs_for_CRT_genes <- TSSs_for_CRT_genes[which(TSSs_for_CRT_genes$chrom == chrom & TSSs_for_CRT_genes$chromStart > chromStart & TSSs_for_CRT_genes$chromEnd < chromEnd),]
+
+# Create TSS annotation track
+TSStrack <- AnnotationTrack(start = TSSs_for_CRT_genes$chromStart, 
+                           end = TSSs_for_CRT_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Transcription_Start_Sites") 
+
+
+# Create genomic interaction dataframe for each candidate enhancer dataset
+GW18_PFC_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/gw18_pfc_ABC_Score_liftOver_hg38_NDD.bedpe",
+                                                type = "bedpe", experiment_name = "GW18_PFC", description = "ABC_Score")
+WTC11_iNeuron_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/CTNND2_GW18PFC_And_NGN2-neuron_ABC_Score_hg38_MPRA_CRISPRa_validated_for_Gviz.bedpe",
+                                                     type = "bedpe", experiment_name = "WTC11_iNeuron", description = "ABC_Score")
+Cicero_Fetal_Cerebrum_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/midfetal_cerebrum_ExN_Cicero_liftOver_hg38_NDD.bedpe",
+                                                             type = "bedpe", experiment_name = "Cicero_Fetal_Cerebrum", description = "Cicero")
+Trevino_Fetal_Cortex_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/trevino_fetal_cortex_enhancer_predictions_NDD.bedpe",
+                                                            type = "bedpe", experiment_name = "Trevino_Fetal_Cortex", description = "Correlation")
+Ziffra_Fetal_Cortex_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/ziffra_fetal_human_cortex_ABC_Score_NDD_for_gviz_figures_only.bedpe",
+                                                           type = "bedpe", experiment_name = "Ziffra_Fetal_Cortex", description = "ABC_Score")
+
+# only plot positive scores for Trevino
+Trevino_Fetal_Cortex_NDD <- Trevino_Fetal_Cortex_NDD[which(Trevino_Fetal_Cortex_NDD@elementMetadata$counts > 0),]
+
+# the height of the interaction plot represents the score from each prioritization method
+summary(GW18_PFC_NDD@elementMetadata$counts)
+summary(WTC11_iNeuron_NDD@elementMetadata$counts)
+summary(Cicero_Fetal_Cerebrum_NDD@elementMetadata$counts)
+summary(Trevino_Fetal_Cortex_NDD@elementMetadata$counts)
+summary(Ziffra_Fetal_Cortex_NDD@elementMetadata$counts)
+
+# Create interaction tracks for each candidate enhancer dataset
+GW18_PFC_NDD_interaction_track <- InteractionTrack(GW18_PFC_NDD, name = "GW18_PFC", chromosome = chrom)
+WTC11_iNeuron_NDD_interaction_track <- InteractionTrack(WTC11_iNeuron_NDD, name = "WTC11_iNeuron", chromosome = chrom)
+Cicero_Fetal_Cerebrum_NDD_interaction_track <- InteractionTrack(Cicero_Fetal_Cerebrum_NDD, name = "Cicero_Fetal_Cerebrum", chromosome = chrom)
+Trevino_Fetal_Cortex_NDD_interaction_track <- InteractionTrack(Trevino_Fetal_Cortex_NDD, name = "Trevino_Fetal_Cortex", chromosome = chrom)
+Ziffra_Fetal_Cortex_NDD_interaction_track <- InteractionTrack(Ziffra_Fetal_Cortex_NDD, name = "Ziffra_Fetal_Cortex", chromosome = chrom)
+
+# Show the available display parameters for a Gviz track
+# availableDisplayPars(gTrack)
+
+
+##Adding an ENCODE ATAC track
+
+
+bamFile <- "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_ATAC-seq_Song_2019_hg38.50bp_trim.merged.srt.nodup.no_chrM_MT.filtered.bw"
+ATAC_track <- DataTrack(range = bamFile, genome = genome, type = "l", 
+                     name = "ATAC", window = -1, 
+                     chromosome = chrom, type = "hist", 
+                    col.histogram = "black", 
+                    fill.histogram = "black", background.title = "white", 
+                    fontcolor.title = "black", ylim = c(0,5))
+class(ATAC_track)
+
+ATAC_track
+
+
+
+##Adding a H3k27Ac track
+
+
+bamFile <- "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_H3K27ac_CUT+RUN_Song_2019_hg38.srt.no_dups.filtered.bw"
+H3k27ac <- DataTrack(range = bamFile, genome = genome, type = "l", 
+                     name = "H3K27AC", window = -1, 
+                     chromosome = chrom, type = "hist", 
+                    col.histogram = "black", 
+                    fill.histogram = "black", background.title = "white", 
+                    fontcolor.title = "black", ylim = c(0,10))
+class(H3k27ac)
+
+H3k27ac
+
+
+##Then reading in the gRNA mappings and function data and generating the gRNA function score track
+
+gRNA_Coordinates <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Scaled_Screen_gRNA_coordinates.txt") %>% 
+  dplyr::rename(Chromosome = seqname, gRNA_Name = patternID) %>% 
+  separate(Chromosome, into = c("Chr", "Chromosome"),
+            sep= 3) %>%
+  arrange(gRNA_Name) 
+
+gRNA_Coordinates <- gRNA_Coordinates %>% 
+  separate(gRNA_Name, into = c("gRNA_ID", "gRNA_Name"), sep = "_", remove = FALSE) %>% 
+  type_convert()
+
+gRNA_DE_Results <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Results.csv") 
+
+gRNA_DE_Results <- gRNA_DE_Results %>% 
+  left_join(gRNA_Coordinates, by = "gRNA_ID")
+
+##convert ensg ids to hgnc symbols and filter
+
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes <- gRNA_DE_Results$response_id
+G_list <- getBM(filters= "ensembl_gene_id", attributes= c("hgnc_symbol", "ensembl_gene_id"), values=genes, mart= mart)
+
+G_list <- G_list %>% 
+  dplyr::rename(response_id = ensembl_gene_id) %>% 
+  dplyr::rename(target_gene = hgnc_symbol)
+
+gRNA_DE_Results <- gRNA_DE_Results %>% 
+  left_join(G_list, by = "response_id")
+
+gRNA_Data <- gRNA_DE_Results %>% 
+  filter(target_gene == symbol) %>% 
+  unite(gRNA_Gene_Pair, gRNA_ID, target_gene, remove = FALSE) 
+
+#gRNA_Data <- gRNA_Data %>%
+  #distinct(gRNA_Gene_Pair, .keep_all = TRUE)
+
+gRNA_Data <- gRNA_Data %>%
+  mutate(plot_pval = -log10(p_value))
+
+##Filtering for hits or non-hits and coloring 
+
+PT_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv")
+
+Promoter_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% filter(Target_CRE_Class == "Promoter")
+
+Enhancer_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% filter(Target_CRE_Class == "Enhancer")
+
+Promoter_Hits <- gRNA_Data %>% 
+  filter(gRNA_ID %in% Promoter_Hits$gRNA_ID)
+Promoter_Hits$Hit <- "Hit"
+
+Enhancer_Hits <- gRNA_Data %>% 
+  filter(gRNA_ID %in% Enhancer_Hits$gRNA_ID)
+Enhancer_Hits$Hit <- "Hit"
+
+Non_Hits <- gRNA_Data %>% 
+  filter(!gRNA_ID %in% PT_Hits$gRNA_ID)
+Non_Hits$Hit <- "Non-Hit" 
+
+##Create hit and non-hit tracks and overlay them
+
+df1_label = "Non-Hit"
+df2_label = "Promoter_Hit"
+df3_label = "Enhancer_Hit"
+df1 <- Non_Hits
+df2 <- Promoter_Hits
+df3 <- Enhancer_Hits
+
+Enhancer_Hit_Track <- DataTrack(data = Enhancer_Hits$plot_pval, start = Enhancer_Hits$start, end = Enhancer_Hits$end, chromosome = chrom, genome = genome, groups = factor(df3_label,levels = c(df1_label, df2_label, df3_label)), col = "#56B4E9", cex = 1.2, legend=FALSE, ylim = c(0,14), col.axis = "black", background = "white", fontcolor.title = "black", name = "-log10(P-values)", background.title = "white", col.frame = "white", fill = "white")
+
+Promoter_Hit_Track <- DataTrack(data = Promoter_Hits$plot_pval, start = Promoter_Hits$start, end = Promoter_Hits$end, chromosome = chrom, genome = genome, groups = factor(df2_label,levels = c(df1_label, df2_label, df3_label)), col = "#E69F00", cex = 1.2, legend=FALSE, ylim = c(0,14), col.axis = "black", background = "white", fontcolor.title = "black", name = "-log10(P-values)", background.title = "white", col.frame = "white", fill = "white")
+
+Non_Hit_Track <- DataTrack(data = Non_Hits$plot_pval, start = Non_Hits$start, end = Non_Hits$end, chromosome = chrom, genome = genome, groups = factor(df1_label,levels = c(df1_label, df2_label)), col = "#999999", legend=FALSE, ylim = c(0,14), col.axis = "black", background = "white", fontcolor.title = "black", name = "-log10(P-values)", background.title = "white", col.frame = "white", fill = "white")
+
+overlapTracks <- OverlayTrack(trackList = list(Non_Hit_Track, Promoter_Hit_Track, Enhancer_Hit_Track), legend= TRUE, background.title = "white", col.frame = "white", fill = "white")
+
+
+
+# Set track parameters for plotting
+displayPars(gTrack) <- list(fontsize = 6)
+displayPars(GW18_PFC_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(WTC11_iNeuron_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Cicero_Fetal_Cerebrum_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Trevino_Fetal_Cortex_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Ziffra_Fetal_Cortex_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(REtrack) <- list(col = "#56B4E9", fill = "#56B4E9", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(TSStrack) <- list(col = "#E69F00", fill = "#E69F00", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(biomTrack) <- list(background.title = "white", fontcolor.title = "black", col = "#999999", fill = "#999999", col.line = "#999999", utr3 = "#999999", utr5 = "#999999", protein_coding = "#999999")
+displayPars(ATAC_track) <- list(background.title = "white", fontcolor.title = "black")
+displayPars(H3k27ac) <- list(background.title = "white", fontcolor.title = "black")
+
+# Plot tracks for candidate enhancer regions of CRT genes only
+pdf("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_CTNND2_candidate_enhancers_Gviz_CRT_genes_only.pdf", height = 3, width = 11)
+plotTracks(list(overlapTracks, WTC11_iNeuron_NDD_interaction_track, ATAC_track, H3k27ac, REtrack, TSStrack, biomTrack), 
+           stackHeight = 0.3, transcriptAnnotation = "symbol", from = chromStart, to = chromEnd, 
+           sizes = c(0.4, 0.15, 0.2, 0.2, 0.2, 0.2, 0.2), labelPos = "below")
+dev.off()
+
+
+```
+
+
+```{r}
+
+##Fig. 5i TCF4 Gviz
+
+##Gviz plot 
+
+# Set genomic coordinates for plotting
+symbol = "TCF4"
+genome = "hg38"
+chrom = "chr18"
+chromStart = 54700000
+chromEnd = 56200000
+
+# load biomaRt data from ensembl
+biomart = biomaRt::useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
+
+# create an ideogram track to display chromosome
+#iTrack <- IdeogramTrack(genome = genome, chromosome = chrom, name = chrom)
+
+# create a genome axis track to display chromosome coordinates
+gTrack <- GenomeAxisTrack()
+
+# create track with ensembl genes
+biomTrack <- BiomartGeneRegionTrack(genome = genome, chromosome = chrom, name = "ENSEMBL", 
+                                    filter = list(with_refseq_mrna=TRUE), biomart = biomart)
+
+
+### (2) Create plot of candidate enhancers, only show contacts for CRT gene list #############################
+
+# Get the list of CRT candidate genes within the genomic window
+CRISPRa_CRT_candidates <- data.frame(read_xlsx(path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.xlsx", sheet = "Candidate_Genes"))
+CRISPRa_CRT_candidates$gene_symbol[which(CRISPRa_CRT_candidates$chrom == chrom & CRISPRa_CRT_candidates$start_hg38 > chromStart & CRISPRa_CRT_candidates$end_hg38 < chromEnd)]
+
+# Get all 5,425 candidate enhancers of CRT genes
+candidate_enhancers_for_CRT_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/candidate_enhancer_regions_for_CRISPRa_CRT_genes.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name"))
+
+# Filter the genomic window of candidate enhancers for plotting
+candidate_enhancers_for_CRT_genes <- candidate_enhancers_for_CRT_genes[which(candidate_enhancers_for_CRT_genes$chrom == chrom & candidate_enhancers_for_CRT_genes$chromStart > chromStart & candidate_enhancers_for_CRT_genes$chromEnd < chromEnd),]
+
+# Create regulatory element annotation track
+REtrack <- AnnotationTrack(start = candidate_enhancers_for_CRT_genes$chromStart, 
+                           end = candidate_enhancers_for_CRT_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Candidate Regulatory Elements") 
+
+
+# Get all 761 TSSs of CRT genes
+TSSs_for_CRT_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name", "number", "strand")) %>% 
+  type_convert()
+
+# Filter the genomic window of candidate enhancers for plotting
+TSSs_for_CRT_genes <- TSSs_for_CRT_genes[which(TSSs_for_CRT_genes$chrom == chrom & TSSs_for_CRT_genes$chromStart > chromStart & TSSs_for_CRT_genes$chromEnd < chromEnd),]
+
+# Create TSS annotation track
+TSStrack <- AnnotationTrack(start = TSSs_for_CRT_genes$chromStart, 
+                           end = TSSs_for_CRT_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Transcription_Start_Sites") 
+
+
+
+# Create genomic interaction dataframe for each candidate enhancer dataset
+GW18_PFC_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/gw18_pfc_ABC_Score_liftOver_hg38_NDD.bedpe",
+                                                type = "bedpe", experiment_name = "GW18_PFC", description = "ABC_Score")
+WTC11_iNeuron_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/TCF4_GW18PFC_And_NGN2-neuron_ABC_Score_hg38_MPRA_CRISPRa_validated_for_Gviz.bedpe",
+                                                     type = "bedpe", experiment_name = "WTC11_iNeuron", description = "ABC_Score")
+Cicero_Fetal_Cerebrum_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/midfetal_cerebrum_ExN_Cicero_liftOver_hg38_NDD.bedpe",
+                                                             type = "bedpe", experiment_name = "Cicero_Fetal_Cerebrum", description = "Cicero")
+Trevino_Fetal_Cortex_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/trevino_fetal_cortex_enhancer_predictions_NDD.bedpe",
+                                                            type = "bedpe", experiment_name = "Trevino_Fetal_Cortex", description = "Correlation")
+Ziffra_Fetal_Cortex_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/ziffra_fetal_human_cortex_ABC_Score_NDD_for_gviz_figures_only.bedpe",
+                                                           type = "bedpe", experiment_name = "Ziffra_Fetal_Cortex", description = "ABC_Score")
+
+# only plot positive scores for Trevino
+Trevino_Fetal_Cortex_NDD <- Trevino_Fetal_Cortex_NDD[which(Trevino_Fetal_Cortex_NDD@elementMetadata$counts > 0),]
+
+# the height of the interaction plot represents the score from each prioritization method
+summary(GW18_PFC_NDD@elementMetadata$counts)
+summary(WTC11_iNeuron_NDD@elementMetadata$counts)
+summary(Cicero_Fetal_Cerebrum_NDD@elementMetadata$counts)
+summary(Trevino_Fetal_Cortex_NDD@elementMetadata$counts)
+summary(Ziffra_Fetal_Cortex_NDD@elementMetadata$counts)
+
+# Create interaction tracks for each candidate enhancer dataset
+GW18_PFC_NDD_interaction_track <- InteractionTrack(GW18_PFC_NDD, name = "GW18_PFC", chromosome = chrom)
+WTC11_iNeuron_NDD_interaction_track <- InteractionTrack(WTC11_iNeuron_NDD, name = "WTC11_iNeuron", chromosome = chrom)
+Cicero_Fetal_Cerebrum_NDD_interaction_track <- InteractionTrack(Cicero_Fetal_Cerebrum_NDD, name = "Cicero_Fetal_Cerebrum", chromosome = chrom)
+Trevino_Fetal_Cortex_NDD_interaction_track <- InteractionTrack(Trevino_Fetal_Cortex_NDD, name = "Trevino_Fetal_Cortex", chromosome = chrom)
+Ziffra_Fetal_Cortex_NDD_interaction_track <- InteractionTrack(Ziffra_Fetal_Cortex_NDD, name = "Ziffra_Fetal_Cortex", chromosome = chrom)
+
+# Show the available display parameters for a Gviz track
+# availableDisplayPars(gTrack)
+
+
+##Adding an ENCODE ATAC track
+
+
+bamFile <- "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_ATAC-seq_Song_2019_hg38.50bp_trim.merged.srt.nodup.no_chrM_MT.filtered.bw"
+ATAC_track <- DataTrack(range = bamFile, genome = genome, type = "l", 
+                     name = "ATAC", window = -1, 
+                     chromosome = chrom, type = "hist", 
+                    col.histogram = "black", 
+                    fill.histogram = "black", background.title = "white", 
+                    fontcolor.title = "black", ylim = c(0,5))
+class(ATAC_track)
+
+ATAC_track
+
+
+
+##Adding a H3k27Ac track
+
+
+bamFile <- "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_H3K27ac_CUT+RUN_Song_2019_hg38.srt.no_dups.filtered.bw"
+H3k27ac <- DataTrack(range = bamFile, genome = genome, type = "l", 
+                     name = "H3K27AC", window = -1, 
+                     chromosome = chrom, type = "hist", 
+                    col.histogram = "black", 
+                    fill.histogram = "black", background.title = "white", 
+                    fontcolor.title = "black", ylim = c(0,10))
+class(H3k27ac)
+
+H3k27ac
+
+
+##Then reading in the gRNA mappings and function data and generating the gRNA function score track
+
+gRNA_Coordinates <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Scaled_Screen_gRNA_coordinates.txt") %>% 
+  dplyr::rename(Chromosome = seqname, gRNA_Name = patternID) %>% 
+  separate(Chromosome, into = c("Chr", "Chromosome"),
+            sep= 3) %>%
+  arrange(gRNA_Name) 
+
+gRNA_Coordinates <- gRNA_Coordinates %>% 
+  separate(gRNA_Name, into = c("gRNA_ID", "gRNA_Name"), sep = "_", remove = FALSE) %>% 
+  type_convert()
+
+gRNA_DE_Results <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Results.csv") 
+
+gRNA_DE_Results <- gRNA_DE_Results %>% 
+  left_join(gRNA_Coordinates, by = "gRNA_ID")
+
+##convert ensg ids to hgnc symbols and filter
+
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes <- gRNA_DE_Results$response_id
+G_list <- getBM(filters= "ensembl_gene_id", attributes= c("hgnc_symbol", "ensembl_gene_id"), values=genes, mart= mart)
+
+G_list <- G_list %>% 
+  dplyr::rename(response_id = ensembl_gene_id) %>% 
+  dplyr::rename(target_gene = hgnc_symbol)
+
+gRNA_DE_Results <- gRNA_DE_Results %>% 
+  left_join(G_list, by = "response_id")
+
+gRNA_Data <- gRNA_DE_Results %>% 
+  filter(target_gene == symbol) %>% 
+  unite(gRNA_Gene_Pair, gRNA_ID, target_gene, remove = FALSE) 
+
+#gRNA_Data <- gRNA_Data %>%
+  #distinct(gRNA_Gene_Pair, .keep_all = TRUE)
+
+gRNA_Data <- gRNA_Data %>%
+  mutate(plot_pval = -log10(p_value))
+
+##Filtering for hits or non-hits and coloring 
+
+PT_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv")
+
+Promoter_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% filter(Target_CRE_Class == "Promoter")
+
+Enhancer_Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% filter(Target_CRE_Class == "Enhancer")
+
+Promoter_Hits <- gRNA_Data %>% 
+  filter(gRNA_ID %in% Promoter_Hits$gRNA_ID)
+Promoter_Hits$Hit <- "Hit"
+
+Enhancer_Hits <- gRNA_Data %>% 
+  filter(gRNA_ID %in% Enhancer_Hits$gRNA_ID)
+Enhancer_Hits$Hit <- "Hit"
+
+Non_Hits <- gRNA_Data %>% 
+  filter(!gRNA_ID %in% PT_Hits$gRNA_ID)
+Non_Hits$Hit <- "Non-Hit" 
+
+##Create hit and non-hit tracks and overlay them
+
+df1_label = "Non-Hit"
+df2_label = "Promoter_Hit"
+df3_label = "Enhancer_Hit"
+df1 <- Non_Hits
+df2 <- Promoter_Hits
+df3 <- Enhancer_Hits
+
+Enhancer_Hit_Track <- DataTrack(data = Enhancer_Hits$plot_pval, start = Enhancer_Hits$start, end = Enhancer_Hits$end, chromosome = chrom, genome = genome, groups = factor(df3_label,levels = c(df1_label, df2_label, df3_label)), col = "#56B4E9", cex = 1.2, legend=FALSE, ylim = c(0,14), col.axis = "black", background = "white", fontcolor.title = "black", name = "-log10(P-values)", background.title = "white", col.frame = "white", fill = "white")
+
+Promoter_Hit_Track <- DataTrack(data = Promoter_Hits$plot_pval, start = Promoter_Hits$start, end = Promoter_Hits$end, chromosome = chrom, genome = genome, groups = factor(df2_label,levels = c(df1_label, df2_label, df3_label)), col = "#E69F00", cex = 1.2, legend=FALSE, ylim = c(0,14), col.axis = "black", background = "white", fontcolor.title = "black", name = "-log10(P-values)", background.title = "white", col.frame = "white", fill = "white")
+
+Non_Hit_Track <- DataTrack(data = Non_Hits$plot_pval, start = Non_Hits$start, end = Non_Hits$end, chromosome = chrom, genome = genome, groups = factor(df1_label,levels = c(df1_label, df2_label)), col = "#999999", legend=FALSE, ylim = c(0,14), col.axis = "black", background = "white", fontcolor.title = "black", name = "-log10(P-values)", background.title = "white", col.frame = "white", fill = "white")
+
+overlapTracks <- OverlayTrack(trackList = list(Non_Hit_Track, Promoter_Hit_Track, Enhancer_Hit_Track), legend= TRUE, background.title = "white", col.frame = "white", fill = "white")
+
+
+
+# Set track parameters for plotting
+displayPars(gTrack) <- list(fontsize = 6)
+displayPars(GW18_PFC_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(WTC11_iNeuron_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Cicero_Fetal_Cerebrum_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Trevino_Fetal_Cortex_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Ziffra_Fetal_Cortex_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(REtrack) <- list(col = "#56B4E9", fill = "#56B4E9", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(TSStrack) <- list(col = "#E69F00", fill = "#E69F00", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(biomTrack) <- list(background.title = "white", fontcolor.title = "black", col = "#999999", fill = "#999999", col.line = "#999999", utr3 = "#999999", utr5 = "#999999", protein_coding = "#999999")
+displayPars(ATAC_track) <- list(background.title = "white", fontcolor.title = "black")
+displayPars(H3k27ac) <- list(background.title = "white", fontcolor.title = "black")
+
+# Plot tracks for candidate enhancer regions of CRT genes only
+pdf("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_4_TCF4_candidate_enhancers_Gviz_CRT_genes_only.pdf", height = 5, width = 11)
+plotTracks(list(overlapTracks, WTC11_iNeuron_NDD_interaction_track, ATAC_track, H3k27ac, REtrack, TSStrack, biomTrack), 
+           stackHeight = 0.3, transcriptAnnotation = "symbol", from = chromStart, to = chromEnd, 
+           sizes = c(0.4, 0.15, 0.2, 0.2, 0.2, 0.2, 0.4), labelPos = "below")
+dev.off()
+
+pdf("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_4_TCF4_Dense_candidate_enhancers_Gviz_CRT_genes_only.pdf", height = 3, width = 11)
+plotTracks(list(overlapTracks, WTC11_iNeuron_NDD_interaction_track, ATAC_track, H3k27ac, REtrack, TSStrack, biomTrack), 
+           stackHeight = 0.3, transcriptAnnotation = "symbol", from = chromStart, to = chromEnd, 
+           sizes = c(0.4, 0.15, 0.2, 0.2, 0.2, 0.2, 0.1), labelPos = "below", stacking = "dense")
+dev.off()
+
+
+```
+
+
+```{r}
+
+##Fig. 5d CTNND2 enhancer boxplots 
+
+##MPRA boxplot 
+
+##Read in MPRA data
+
+MPRA_Data <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Neurohub_CRISPRa_CRT_MPRA_Results.csv")
+
+##Remove sequences with low BC counts
+
+MPRA_Data <- MPRA_Data %>% 
+  drop_na(Is_Active)
+
+##Make plot
+  
+MPRA_Data_Control <- MPRA_Data %>% 
+  filter(Sequence_Class %in% c("Scrambled"))
+
+MPRA_Data_SCN2A <- MPRA_Data %>% 
+  filter(CRS_Coordinates_hg38 %in% c("chr5:12016287-12016787"))
+
+MPRA_Data_BP <- rbind(MPRA_Data_Control, MPRA_Data_SCN2A)
+  
+ggplot(MPRA_Data_BP, aes(x = Sequence_Class, y = Average_Log2_Count_Ratio, fill = Sequence_Class)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#56B4E9")) +
+  geom_boxplot(colour = "black", width = 0.6, lwd =0.5) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/CTNND2_Test_V_Control_Boxplot_Distal.jpeg", width = 3, height = 4.75)
+
+
+##Fig. 5e Make second CTNND2 enhancer plot
+
+##Make plot
+  
+MPRA_Data_Control <- MPRA_Data %>% 
+  filter(Sequence_Class %in% c("Scrambled"))
+
+MPRA_Data_SCN2A <- MPRA_Data %>% 
+  filter(CRS_Coordinates_hg38 %in% c("chr5:13975096-13975922"))
+
+MPRA_Data_BP <- rbind(MPRA_Data_Control, MPRA_Data_SCN2A)
+  
+ggplot(MPRA_Data_BP, aes(x = Sequence_Class, y = Average_Log2_Count_Ratio, fill = Sequence_Class)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#56B4E9")) +
+  geom_boxplot(colour = "black", width = 0.6, lwd =0.5) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/CTNND2_Test_V_Control_Boxplot_Ultra_Long.jpeg", width = 3, height = 4.75)
+
+
+##Fig. 5j TCF4 enhancer boxplots 
+
+##MPRA boxplot 
+
+##Read in MPRA data
+
+MPRA_Data <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Neurohub_CRISPRa_CRT_MPRA_Results.csv")
+
+##Remove sequences with low BC counts
+
+MPRA_Data <- MPRA_Data %>% 
+  drop_na(Is_Active)
+
+##Make plot
+  
+MPRA_Data_Control <- MPRA_Data %>% 
+  filter(Sequence_Class %in% c("Scrambled"))
+
+MPRA_Data_SCN2A <- MPRA_Data %>% 
+  filter(CRS_Coordinates_hg38 %in% c("chr18:55483221-55483721"))
+
+MPRA_Data_BP <- rbind(MPRA_Data_Control, MPRA_Data_SCN2A)
+  
+ggplot(MPRA_Data_BP, aes(x = Sequence_Class, y = Average_Log2_Count_Ratio, fill = Sequence_Class)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#56B4E9")) +
+  geom_boxplot(colour = "black", width = 0.6, lwd =0.5) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/TCF4_Test_V_Control_Boxplot.jpeg", width = 3, height = 4.75)
+
+```
+
+
+
+```{r}
+##Fig. 5b CHD8 HEK293T bar plot
+
+qPCR <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/250725_Table_SX_qPCR_Validation_Experiments.xlsx")
+
+##Unite to make conditions
+
+qPCR <- qPCR %>% 
+  unite(Condition, Experiment_ID, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE) %>% 
+  unite(Condition_Rep, Experiment_ID, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, Transfection_Replicate, remove = FALSE) %>% 
+  unite(Condition_No_Batch, Experiment_ID, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE)
+
+
+## Looking at Target gene upregulation in HEK293T cells normalized to Beta_Actin 
+
+
+HEK293T_qPCR <- qPCR %>% 
+  filter(Parent_Cell_Line == "HEK293T") 
+
+
+HEK293T_qPCR <- HEK293T_qPCR %>% 
+  mutate(CHD8_Delta_Ct = CHD8_Ct - `B-ACTIN_Ct`) 
+
+
+##Plot CHD8 expression in HEK293T cells 
+
+##First calculate mean CHD8 delta ct of control for batch 1  
+
+CHD8_Control <- HEK293T_qPCR %>%
+  filter(Condition %in% c("CHD8_HEK293T_1_WT_NA_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CHD8_Delta_Ct = mean(CHD8_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CHD8 and fold change relative to control 
+
+CHD8_HEK293T_qPCR <- HEK293T_qPCR %>%
+  filter(Condition %in% c("CHD8_HEK293T_1_WT_NA_NA", "CHD8_HEK293T_1_WT_CHD8_12941")) 
+
+CHD8_HEK293T_qPCR$Mean_Control_CHD8_Delta_Ct <- CHD8_Control$Mean_Control_CHD8_Delta_Ct
+
+CHD8_HEK293T_qPCR <- CHD8_HEK293T_qPCR %>% 
+  mutate(CHD8_Delta_Delta_Ct = Mean_Control_CHD8_Delta_Ct - CHD8_Delta_Ct) %>% 
+  mutate(CHD8_Fold_Change_Relative_To_Control = 2^CHD8_Delta_Delta_Ct)
+
+CHD8_HEK293T_qPCR_B1 <- CHD8_HEK293T_qPCR 
+
+##Do the same for batch 2
+
+##First calculate mean CHD8 delta ct of control for batch 1  
+
+CHD8_Control <- HEK293T_qPCR %>%
+  filter(Condition %in% c("CHD8_HEK293T_2_WT_NA_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CHD8_Delta_Ct = mean(CHD8_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CHD8 and fold change relative to control 
+
+CHD8_HEK293T_qPCR <- HEK293T_qPCR %>%
+  filter(Condition %in% c("CHD8_HEK293T_2_WT_NA_NA", "CHD8_HEK293T_2_WT_CHD8_12941")) 
+
+CHD8_HEK293T_qPCR$Mean_Control_CHD8_Delta_Ct <- CHD8_Control$Mean_Control_CHD8_Delta_Ct
+
+CHD8_HEK293T_qPCR <- CHD8_HEK293T_qPCR %>% 
+  mutate(CHD8_Delta_Delta_Ct = Mean_Control_CHD8_Delta_Ct - CHD8_Delta_Ct) %>% 
+  mutate(CHD8_Fold_Change_Relative_To_Control = 2^CHD8_Delta_Delta_Ct)
+
+CHD8_HEK293T_qPCR_B2 <- CHD8_HEK293T_qPCR
+
+##Combine for plotting
+
+CHD8_HEK293T_qPCR <- rbind(CHD8_HEK293T_qPCR_B1, CHD8_HEK293T_qPCR_B2)
+
+##Select relvant values
+
+CHD8_HEK293T_qPCR <- CHD8_HEK293T_qPCR %>% 
+  dplyr::select(Condition_No_Batch, Batch_Number, Transfection_Replicate, CHD8_Fold_Change_Relative_To_Control) 
+
+CHD8_HEK293T_qPCR$Condition_No_Batch <- factor(CHD8_HEK293T_qPCR$Condition_No_Batch, levels = c("CHD8_HEK293T_WT_NA_NA", "CHD8_HEK293T_WT_CHD8_12941"))
+  
+
+##Plot
+
+ggplot(CHD8_HEK293T_qPCR, aes(x = Condition_No_Batch, y = CHD8_Fold_Change_Relative_To_Control, fill = Condition_No_Batch)) + 
+    theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#E69F00", "#56B4E9")) + 
+  stat_summary(fun.y=mean, geom="bar", colour = "black", width = 0.7) +
+  geom_jitter(size = 1.5, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  theme(axis.text.x = element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 21)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_CHD8_HEK293T_Test_V_Control_Barchart.jpeg", width = 2.2, height = 4.2)  
+
+pairwise.t.test(CHD8_HEK293T_qPCR$CHD8_Fold_Change_Relative_To_Control, CHD8_HEK293T_qPCR$Condition_No_Batch, alternative = "greater", p.adjust.method = "fdr", pool.sd = FALSE)
+
+```
+
+
+```{r}
+
+##Fig. 5b CHD8 organoid bar plot
+
+qPCR <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/250725_Table_SX_qPCR_Validation_Experiments.xlsx") %>% 
+  filter(Infection_Date == "D25") %>% 
+  filter(Parent_Cell_Line == "KOLF2.2J") %>% 
+  filter(Cell_Line == "1F")
+
+##Unite to make conditions
+
+qPCR <- qPCR %>% 
+  unite(Condition, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE) %>% 
+  unite(Condition_Rep, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, Transfection_Replicate, remove = FALSE) %>% 
+  unite(Condition_No_Batch, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE)
+
+
+## Looking at Target gene upregulation in HEK293T cells normalized to dCas9
+
+
+KOLF_qPCR <- qPCR %>% 
+  filter(Parent_Cell_Line == "KOLF2.2J") 
+
+
+KOLF_qPCR <- KOLF_qPCR %>% 
+  mutate(CHD8_Delta_Ct = CHD8_Ct - `TBP_Ct`) 
+
+
+##Plot CHD8 expression in KOLF cells 
+
+##First calculate mean CHD8 delta ct of control for batch 1  
+
+CHD8_Control <- KOLF_qPCR %>%
+  filter(Condition %in% c("KOLF2.2J_1_CHD8_Het_GFP_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CHD8_Delta_Ct = mean(CHD8_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CHD8 and fold change relative to control 
+
+CHD8_KOLF_qPCR <- KOLF_qPCR %>%
+  filter(Condition %in% c("KOLF2.2J_1_CHD8_Het_GFP_NA", "KOLF2.2J_1_CHD8_Het_CHD8_12941")) 
+
+CHD8_KOLF_qPCR$Mean_Control_CHD8_Delta_Ct <- CHD8_Control$Mean_Control_CHD8_Delta_Ct
+
+CHD8_KOLF_qPCR <- CHD8_KOLF_qPCR %>% 
+  mutate(CHD8_Delta_Delta_Ct = Mean_Control_CHD8_Delta_Ct - CHD8_Delta_Ct) %>% 
+  mutate(CHD8_Fold_Change_Relative_To_Control = 2^CHD8_Delta_Delta_Ct)
+
+CHD8_KOLF_qPCR_B1 <- CHD8_KOLF_qPCR 
+
+##Do the same for batch 2
+
+##First calculate mean CHD8 delta ct of control for batch 1  
+
+CHD8_Control <- KOLF_qPCR %>%
+  filter(Condition %in% c("KOLF2.2J_2_CHD8_Het_GFP_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CHD8_Delta_Ct = mean(CHD8_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CHD8 and fold change relative to control 
+
+CHD8_KOLF_qPCR <- KOLF_qPCR %>%
+  filter(Condition %in% c("KOLF2.2J_2_CHD8_Het_GFP_NA", "KOLF2.2J_2_CHD8_Het_CHD8_12941")) 
+
+CHD8_KOLF_qPCR$Mean_Control_CHD8_Delta_Ct <- CHD8_Control$Mean_Control_CHD8_Delta_Ct
+
+CHD8_KOLF_qPCR <- CHD8_KOLF_qPCR %>% 
+  mutate(CHD8_Delta_Delta_Ct = Mean_Control_CHD8_Delta_Ct - CHD8_Delta_Ct) %>% 
+  mutate(CHD8_Fold_Change_Relative_To_Control = 2^CHD8_Delta_Delta_Ct)
+
+CHD8_KOLF_qPCR_B2 <- CHD8_KOLF_qPCR
+
+##Combine for plotting
+
+CHD8_KOLF_qPCR <- rbind(CHD8_KOLF_qPCR_B1, CHD8_KOLF_qPCR_B2)
+
+##Select relvant values
+
+CHD8_KOLF_qPCR <- CHD8_KOLF_qPCR %>% 
+  dplyr::select(Condition_No_Batch, Batch_Number, Transfection_Replicate, CHD8_Fold_Change_Relative_To_Control) 
+
+CHD8_KOLF_qPCR$Condition_No_Batch <- factor(CHD8_KOLF_qPCR$Condition_No_Batch, levels = c("CHD8_Het_GFP_NA", "CHD8_Het_CHD8_12941"))
+  
+
+##Plot
+
+ggplot(CHD8_KOLF_qPCR, aes(x = Condition_No_Batch, y = CHD8_Fold_Change_Relative_To_Control, fill = Condition_No_Batch)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#E69F00", "#56B4E9")) + 
+  stat_summary(fun.y=mean, geom="bar", colour = "black", width = 0.7) +
+  geom_jitter(size = 1.5, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  theme(axis.text.x = element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 21)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_CHD8_KOLF_Test_V_Control_Barchart.jpeg", width = 2.2, height = 4.2)  
+
+pairwise.t.test(CHD8_KOLF_qPCR$CHD8_Fold_Change_Relative_To_Control, CHD8_KOLF_qPCR$Condition_No_Batch, alternative = "greater", p.adjust.method = "fdr", pool.sd = FALSE)
+
+
+CHD8_KOLF_qPCR_Mean_FC <- CHD8_KOLF_qPCR %>% 
+  group_by(Condition_No_Batch) %>% 
+  mutate(Mean_FC_Rel_Control = mean(CHD8_Fold_Change_Relative_To_Control)) %>% 
+  ungroup()
+
+```
+
+
+```{r}
+##Fig. 5f CTNND2 HEK293T bar plot
+
+qPCR <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/250725_Table_SX_qPCR_Validation_Experiments.xlsx") %>% 
+  filter(Parent_Cell_Line == "HEK293T") %>% 
+  filter(Experiment_ID == c("CTNND2_HEK293T"))
+  
+
+##Unite to make conditions
+
+qPCR <- qPCR %>% 
+  unite(Condition, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE) %>% 
+  unite(Condition_Rep, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, Transfection_Replicate, remove = FALSE) %>% 
+  unite(Condition_No_Batch, Parent_Cell_Line, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE)
+
+
+## Looking at Target gene upregulation in HEK293T cells normalized to dCAS9
+
+
+HEK293T_qPCR <- qPCR %>% 
+  mutate(CTNND2_Delta_Ct = CTNND2_Ct - `B-ACTIN_Ct`) 
+
+
+##Plot CTNND2 expression in HEK293T cells 
+
+##First calculate mean CTNND2 delta ct of control for batch 1  
+
+CTNND2_Control <- HEK293T_qPCR %>%
+  filter(Condition %in% c("HEK293T_1_WT_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CTNND2_Delta_Ct = mean(CTNND2_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CTNND2 and fold change relative to control 
+
+CTNND2_HEK293T_qPCR <- HEK293T_qPCR %>%
+  filter(Condition %in% c("HEK293T_1_WT_Scrambled_NA", "HEK293T_1_WT_CTNND2_12993", "HEK293T_1_WT_CTNND2_7155", "HEK293T_1_WT_CTNND2_7196")) 
+
+CTNND2_HEK293T_qPCR$Mean_Control_CTNND2_Delta_Ct <- CTNND2_Control$Mean_Control_CTNND2_Delta_Ct
+
+CTNND2_HEK293T_qPCR <- CTNND2_HEK293T_qPCR %>% 
+  mutate(CTNND2_Delta_Delta_Ct = Mean_Control_CTNND2_Delta_Ct - CTNND2_Delta_Ct) %>% 
+  mutate(CTNND2_Fold_Change_Relative_To_Control = 2^CTNND2_Delta_Delta_Ct)
+
+CTNND2_HEK293T_qPCR_B1 <- CTNND2_HEK293T_qPCR 
+
+##Do the same for batch 2
+
+##First calculate mean CTNND2 delta ct of control for batch 1  
+
+CTNND2_Control <- HEK293T_qPCR %>%
+  filter(Condition %in% c("HEK293T_2_WT_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CTNND2_Delta_Ct = mean(CTNND2_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CTNND2 and fold change relative to control 
+
+CTNND2_HEK293T_qPCR <- HEK293T_qPCR %>%
+  filter(Condition %in% c("HEK293T_2_WT_Scrambled_NA", "HEK293T_2_WT_CTNND2_12993", "HEK293T_2_WT_CTNND2_7155", "HEK293T_2_WT_CTNND2_7196")) 
+
+CTNND2_HEK293T_qPCR$Mean_Control_CTNND2_Delta_Ct <- CTNND2_Control$Mean_Control_CTNND2_Delta_Ct
+
+CTNND2_HEK293T_qPCR <- CTNND2_HEK293T_qPCR %>% 
+  mutate(CTNND2_Delta_Delta_Ct = Mean_Control_CTNND2_Delta_Ct - CTNND2_Delta_Ct) %>% 
+  mutate(CTNND2_Fold_Change_Relative_To_Control = 2^CTNND2_Delta_Delta_Ct)
+
+CTNND2_HEK293T_qPCR_B2 <- CTNND2_HEK293T_qPCR
+
+##Combine for plotting
+
+CTNND2_HEK293T_qPCR <- rbind(CTNND2_HEK293T_qPCR_B1, CTNND2_HEK293T_qPCR_B2)
+
+##Select relvant values
+
+CTNND2_HEK293T_qPCR <- CTNND2_HEK293T_qPCR %>% 
+  dplyr::select(Condition_No_Batch, Batch_Number, Transfection_Replicate, CTNND2_Fold_Change_Relative_To_Control) 
+
+CTNND2_HEK293T_qPCR$Condition_No_Batch <- factor(CTNND2_HEK293T_qPCR$Condition_No_Batch, levels = c("HEK293T_WT_Scrambled_NA", "HEK293T_WT_CTNND2_12993", "HEK293T_WT_CTNND2_7155", "HEK293T_WT_CTNND2_7196"))
+  
+
+##Plot
+
+ggplot(CTNND2_HEK293T_qPCR, aes(x = Condition_No_Batch, y = CTNND2_Fold_Change_Relative_To_Control, fill = Condition_No_Batch)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#E69F00", "#56B4E9", "#56B4E9")) + 
+  stat_summary(fun.y=mean, geom="bar", colour = "black", width = 0.7) +
+  geom_jitter(size = 1.5, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,7), breaks = c(0,1,2,3,4,5,6)) +
+  theme(axis.text.x = element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 21)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_CTNND2_HEK293T_Test_V_Control_Barchart.jpeg", width = 3.5, height = 4.2)  
+
+pairwise.t.test(CTNND2_HEK293T_qPCR$CTNND2_Fold_Change_Relative_To_Control, CTNND2_HEK293T_qPCR$Condition_No_Batch, alternative = "greater", p.adjust.method = "fdr", pool.sd = FALSE) 
+
+CTNND2_HEK293T_qPCR_Mean_FC <- CTNND2_HEK293T_qPCR %>% 
+  group_by(Condition_No_Batch) %>% 
+  mutate(Mean_FC_Rel_Control = mean(CTNND2_Fold_Change_Relative_To_Control)) %>% 
+  ungroup()
+
+```
+
+
+
+
+```{r}
+##Fig. 5g CTNND2 Cri1377 iPSC bar plot
+
+qPCR <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/250725_Table_SX_qPCR_Validation_Experiments.xlsx") %>% 
+  filter(Parent_Cell_Line == "Cri1377") 
+
+##Unite to make conditions
+
+qPCR <- qPCR %>% 
+  unite(Condition, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE) %>% 
+  unite(Condition_Rep, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, Transfection_Replicate, remove = FALSE) %>% 
+  unite(Condition_No_Batch, Parent_Cell_Line, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE)
+
+
+## Looking at Target gene upregulation in HEK293T cells normalized to dCAS9
+
+
+Cri1377_qPCR <- qPCR %>% 
+  mutate(CTNND2_Delta_Ct = CTNND2_Ct - `B-ACTIN_Ct`) 
+
+
+##Plot CTNND2 expression in Cri1377 cells 
+
+##First calculate mean CTNND2 delta ct of control for batch 1  
+
+CTNND2_Control <- Cri1377_qPCR %>%
+  filter(Condition %in% c("Cri1377_1_Cri-du-Chat_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CTNND2_Delta_Ct = mean(CTNND2_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CTNND2 and fold change relative to control 
+
+CTNND2_Cri1377_qPCR <- Cri1377_qPCR %>%
+  filter(Condition %in% c("Cri1377_1_Cri-du-Chat_Scrambled_NA", "Cri1377_1_Cri-du-Chat_CTNND2_12993", "Cri1377_1_Cri-du-Chat_CTNND2_7155", "Cri1377_1_Cri-du-Chat_CTNND2_7196")) 
+
+CTNND2_Cri1377_qPCR$Mean_Control_CTNND2_Delta_Ct <- CTNND2_Control$Mean_Control_CTNND2_Delta_Ct
+
+CTNND2_Cri1377_qPCR <- CTNND2_Cri1377_qPCR %>% 
+  mutate(CTNND2_Delta_Delta_Ct = Mean_Control_CTNND2_Delta_Ct - CTNND2_Delta_Ct) %>% 
+  mutate(CTNND2_Fold_Change_Relative_To_Control = 2^CTNND2_Delta_Delta_Ct)
+
+CTNND2_Cri1377_qPCR_B1 <- CTNND2_Cri1377_qPCR 
+
+##Do the same for batch 2
+
+##First calculate mean CTNND2 delta ct of control for batch 1  
+
+CTNND2_Control <- Cri1377_qPCR %>%
+  filter(Condition %in% c("Cri1377_2_Cri-du-Chat_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CTNND2_Delta_Ct = mean(CTNND2_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CTNND2 and fold change relative to control 
+
+CTNND2_Cri1377_qPCR <- Cri1377_qPCR %>%
+  filter(Condition %in% c("Cri1377_2_Cri-du-Chat_Scrambled_NA", "Cri1377_2_Cri-du-Chat_CTNND2_12993", "Cri1377_2_Cri-du-Chat_CTNND2_7155", "Cri1377_2_Cri-du-Chat_CTNND2_7196")) 
+
+CTNND2_Cri1377_qPCR$Mean_Control_CTNND2_Delta_Ct <- CTNND2_Control$Mean_Control_CTNND2_Delta_Ct
+
+CTNND2_Cri1377_qPCR <- CTNND2_Cri1377_qPCR %>% 
+  mutate(CTNND2_Delta_Delta_Ct = Mean_Control_CTNND2_Delta_Ct - CTNND2_Delta_Ct) %>% 
+  mutate(CTNND2_Fold_Change_Relative_To_Control = 2^CTNND2_Delta_Delta_Ct)
+
+CTNND2_Cri1377_qPCR_B2 <- CTNND2_Cri1377_qPCR
+
+##Combine for plotting
+
+CTNND2_Cri1377_qPCR <- rbind(CTNND2_Cri1377_qPCR_B1, CTNND2_Cri1377_qPCR_B2)
+
+##Select relvant values
+
+CTNND2_Cri1377_qPCR <- CTNND2_Cri1377_qPCR %>% 
+  dplyr::select(Condition_No_Batch, Batch_Number, Transfection_Replicate, CTNND2_Fold_Change_Relative_To_Control) 
+
+CTNND2_Cri1377_qPCR$Condition_No_Batch <- factor(CTNND2_Cri1377_qPCR$Condition_No_Batch, levels = c("Cri1377_Cri-du-Chat_Scrambled_NA", "Cri1377_Cri-du-Chat_CTNND2_12993", "Cri1377_Cri-du-Chat_CTNND2_7155", "Cri1377_Cri-du-Chat_CTNND2_7196"))
+  
+
+##Plot
+
+ggplot(CTNND2_Cri1377_qPCR, aes(x = Condition_No_Batch, y = CTNND2_Fold_Change_Relative_To_Control, fill = Condition_No_Batch)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#E69F00", "#56B4E9", "#56B4E9")) + 
+  stat_summary(fun.y=mean, geom="bar", colour = "black", width = 0.7) +
+  geom_jitter(size = 1.5, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,7), breaks = c(0,1,2,3,4,5,6)) +
+  theme(axis.text.x = element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 21)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_CTNND2_Cri1377_Test_V_Control_Barchart.jpeg", width = 3.5, height = 4.2)  
+
+pairwise.t.test(CTNND2_Cri1377_qPCR$CTNND2_Fold_Change_Relative_To_Control, CTNND2_Cri1377_qPCR$Condition_No_Batch, alternative = "greater", p.adjust.method = "fdr", pool.sd = FALSE) 
+
+CTNND2_Cri1377_qPCR_Mean_FC <- CTNND2_Cri1377_qPCR %>% 
+  group_by(Condition_No_Batch) %>% 
+  mutate(Mean_FC_Rel_Control = mean(CTNND2_Fold_Change_Relative_To_Control)) %>% 
+  ungroup()
+
+```
+
+
+```{r}
+##Fig. 5h CTNND2 Cri1378 iPSC bar plot
+
+qPCR <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/250725_Table_SX_qPCR_Validation_Experiments.xlsx") %>% 
+  filter(Parent_Cell_Line == "Cri1378") 
+
+##Unite to make conditions
+
+qPCR <- qPCR %>% 
+  unite(Condition, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE) %>% 
+  unite(Condition_Rep, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, Transfection_Replicate, remove = FALSE) %>% 
+  unite(Condition_No_Batch, Parent_Cell_Line, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE)
+
+
+## Looking at Target gene upregulation in HEK293T cells normalized to dCAS9
+
+
+Cri1378_qPCR <- qPCR %>% 
+  mutate(CTNND2_Delta_Ct = CTNND2_Ct - `B-ACTIN_Ct`) 
+
+
+##Plot CTNND2 expression in Cri1378 cells 
+
+##First calculate mean CTNND2 delta ct of control for batch 1  
+
+CTNND2_Control <- Cri1378_qPCR %>%
+  filter(Condition %in% c("Cri1378_1_Cri-du-Chat_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CTNND2_Delta_Ct = mean(CTNND2_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CTNND2 and fold change relative to control 
+
+CTNND2_Cri1378_qPCR <- Cri1378_qPCR %>%
+  filter(Condition %in% c("Cri1378_1_Cri-du-Chat_Scrambled_NA", "Cri1378_1_Cri-du-Chat_CTNND2_12993", "Cri1378_1_Cri-du-Chat_CTNND2_7155", "Cri1378_1_Cri-du-Chat_CTNND2_7196")) 
+
+CTNND2_Cri1378_qPCR$Mean_Control_CTNND2_Delta_Ct <- CTNND2_Control$Mean_Control_CTNND2_Delta_Ct
+
+CTNND2_Cri1378_qPCR <- CTNND2_Cri1378_qPCR %>% 
+  mutate(CTNND2_Delta_Delta_Ct = Mean_Control_CTNND2_Delta_Ct - CTNND2_Delta_Ct) %>% 
+  mutate(CTNND2_Fold_Change_Relative_To_Control = 2^CTNND2_Delta_Delta_Ct)
+
+CTNND2_Cri1378_qPCR_B1 <- CTNND2_Cri1378_qPCR 
+
+##Do the same for batch 2
+
+##First calculate mean CTNND2 delta ct of control for batch 1  
+
+CTNND2_Control <- Cri1378_qPCR %>%
+  filter(Condition %in% c("Cri1378_2_Cri-du-Chat_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_CTNND2_Delta_Ct = mean(CTNND2_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for CTNND2 and fold change relative to control 
+
+CTNND2_Cri1378_qPCR <- Cri1378_qPCR %>%
+  filter(Condition %in% c("Cri1378_2_Cri-du-Chat_Scrambled_NA", "Cri1378_2_Cri-du-Chat_CTNND2_12993", "Cri1378_2_Cri-du-Chat_CTNND2_7155", "Cri1378_2_Cri-du-Chat_CTNND2_7196")) 
+
+CTNND2_Cri1378_qPCR$Mean_Control_CTNND2_Delta_Ct <- CTNND2_Control$Mean_Control_CTNND2_Delta_Ct
+
+CTNND2_Cri1378_qPCR <- CTNND2_Cri1378_qPCR %>% 
+  mutate(CTNND2_Delta_Delta_Ct = Mean_Control_CTNND2_Delta_Ct - CTNND2_Delta_Ct) %>% 
+  mutate(CTNND2_Fold_Change_Relative_To_Control = 2^CTNND2_Delta_Delta_Ct)
+
+CTNND2_Cri1378_qPCR_B2 <- CTNND2_Cri1378_qPCR
+
+##Combine for plotting
+
+CTNND2_Cri1378_qPCR <- rbind(CTNND2_Cri1378_qPCR_B1, CTNND2_Cri1378_qPCR_B2)
+
+##Select relvant values
+
+CTNND2_Cri1378_qPCR <- CTNND2_Cri1378_qPCR %>% 
+  dplyr::select(Condition_No_Batch, Batch_Number, Transfection_Replicate, CTNND2_Fold_Change_Relative_To_Control) 
+
+CTNND2_Cri1378_qPCR$Condition_No_Batch <- factor(CTNND2_Cri1378_qPCR$Condition_No_Batch, levels = c("Cri1378_Cri-du-Chat_Scrambled_NA", "Cri1378_Cri-du-Chat_CTNND2_12993", "Cri1378_Cri-du-Chat_CTNND2_7155", "Cri1378_Cri-du-Chat_CTNND2_7196"))
+  
+
+##Plot
+
+ggplot(CTNND2_Cri1378_qPCR, aes(x = Condition_No_Batch, y = CTNND2_Fold_Change_Relative_To_Control, fill = Condition_No_Batch)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#E69F00", "#56B4E9", "#56B4E9")) + 
+  stat_summary(fun.y=mean, geom="bar", colour = "black", width = 0.7) +
+  geom_jitter(size = 1.5, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,7), breaks = c(0,1,2,3,4,5,6)) +
+  theme(axis.text.x = element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 21)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_CTNND2_Cri1378_Test_V_Control_Barchart.jpeg", width = 3.5, height = 4.2)  
+
+pairwise.t.test(CTNND2_Cri1378_qPCR$CTNND2_Fold_Change_Relative_To_Control, CTNND2_Cri1378_qPCR$Condition_No_Batch, alternative = "greater", p.adjust.method = "fdr", pool.sd = FALSE)
+
+CTNND2_Cri1378_qPCR_Mean_FC <- CTNND2_Cri1378_qPCR %>% 
+  group_by(Condition_No_Batch) %>% 
+  mutate(Mean_FC_Rel_Control = mean(CTNND2_Fold_Change_Relative_To_Control)) %>% 
+  ungroup()
+
+```
+
+
+```{r}
+##Fig. 5m TCF4 PH1 iPSC bar plot
+
+qPCR <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/250725_Table_SX_qPCR_Validation_Experiments.xlsx") %>% 
+  filter(Parent_Cell_Line == "PH1") 
+
+##Unite to make conditions
+
+qPCR <- qPCR %>% 
+  unite(Condition, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE) %>% 
+  unite(Condition_Rep, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, Transfection_Replicate, remove = FALSE) %>% 
+  unite(Condition_No_Batch, Parent_Cell_Line, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE)
+
+
+## Looking at Target gene upregulation in HEK293T cells normalized to dCAS9
+
+
+PH1_qPCR <- qPCR %>% 
+  mutate(TCF4_Delta_Ct = TCF4_Ct - `B-ACTIN_Ct`) 
+
+
+##Plot TCF4 expression in PH1 cells 
+
+##First calculate mean TCF4 delta ct of control for batch 1  
+
+TCF4_Control <- PH1_qPCR %>%
+  filter(Condition %in% c("PH1_1_Pitt-Hopkins_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_TCF4_Delta_Ct = mean(TCF4_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for TCF4 and fold change relative to control 
+
+TCF4_PH1_qPCR <- PH1_qPCR %>%
+  filter(Condition %in% c("PH1_1_Pitt-Hopkins_Scrambled_NA", "PH1_1_Pitt-Hopkins_TCF4_5", "PH1_1_Pitt-Hopkins_TCF4_3349")) 
+
+TCF4_PH1_qPCR$Mean_Control_TCF4_Delta_Ct <- TCF4_Control$Mean_Control_TCF4_Delta_Ct
+
+TCF4_PH1_qPCR <- TCF4_PH1_qPCR %>% 
+  mutate(TCF4_Delta_Delta_Ct = Mean_Control_TCF4_Delta_Ct - TCF4_Delta_Ct) %>% 
+  mutate(TCF4_Fold_Change_Relative_To_Control = 2^TCF4_Delta_Delta_Ct)
+
+TCF4_PH1_qPCR_B1 <- TCF4_PH1_qPCR 
+
+##Do the same for batch 2
+
+##First calculate mean TCF4 delta ct of control for batch 1  
+
+TCF4_Control <- PH1_qPCR %>%
+  filter(Condition %in% c("PH1_2_Pitt-Hopkins_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_TCF4_Delta_Ct = mean(TCF4_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for TCF4 and fold change relative to control 
+
+TCF4_PH1_qPCR <- PH1_qPCR %>%
+  filter(Condition %in% c("PH1_2_Pitt-Hopkins_Scrambled_NA", "PH1_2_Pitt-Hopkins_TCF4_5", "PH1_2_Pitt-Hopkins_TCF4_3349")) 
+
+TCF4_PH1_qPCR$Mean_Control_TCF4_Delta_Ct <- TCF4_Control$Mean_Control_TCF4_Delta_Ct
+
+TCF4_PH1_qPCR <- TCF4_PH1_qPCR %>% 
+  mutate(TCF4_Delta_Delta_Ct = Mean_Control_TCF4_Delta_Ct - TCF4_Delta_Ct) %>% 
+  mutate(TCF4_Fold_Change_Relative_To_Control = 2^TCF4_Delta_Delta_Ct)
+
+TCF4_PH1_qPCR_B2 <- TCF4_PH1_qPCR
+
+##Combine for plotting
+
+TCF4_PH1_qPCR <- rbind(TCF4_PH1_qPCR_B1, TCF4_PH1_qPCR_B2)
+
+##Select relvant values
+
+TCF4_PH1_qPCR <- TCF4_PH1_qPCR %>% 
+  dplyr::select(Condition_No_Batch, Batch_Number, Transfection_Replicate, TCF4_Fold_Change_Relative_To_Control) 
+
+TCF4_PH1_qPCR$Condition_No_Batch <- factor(TCF4_PH1_qPCR$Condition_No_Batch, levels = c("PH1_Pitt-Hopkins_Scrambled_NA", "PH1_Pitt-Hopkins_TCF4_5", "PH1_Pitt-Hopkins_TCF4_3349"))
+  
+
+##Plot
+
+ggplot(TCF4_PH1_qPCR, aes(x = Condition_No_Batch, y = TCF4_Fold_Change_Relative_To_Control, fill = Condition_No_Batch)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#E69F00", "#56B4E9", "#56B4E9")) + 
+  stat_summary(fun.y=mean, geom="bar", colour = "black", width = 0.7) +
+  geom_jitter(size = 1.5, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,2), breaks = c(0,0.5,1,1.5)) +
+  theme(axis.text.x = element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 21)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_TCF4_PH1_Test_V_Control_Barchart.jpeg", width = 2.85, height = 4.2)  
+
+pairwise.t.test(TCF4_PH1_qPCR$TCF4_Fold_Change_Relative_To_Control, TCF4_PH1_qPCR$Condition_No_Batch, alternative = "greater", p.adjust.method = "fdr", pool.sd = FALSE)
+
+TCF4_PH1_qPCR_Mean_FC <- TCF4_PH1_qPCR %>% 
+  group_by(Condition_No_Batch) %>% 
+  mutate(Mean_FC_Rel_Control = mean(TCF4_Fold_Change_Relative_To_Control)) %>% 
+  ungroup()
+
+
+```
+
+
+```{r}
+##Fig. 5n TCF4 PH2 iPSC bar plot
+
+qPCR <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/250725_Table_SX_qPCR_Validation_Experiments.xlsx") %>% 
+  filter(Parent_Cell_Line == "PH2") 
+
+##Unite to make conditions
+
+qPCR <- qPCR %>% 
+  unite(Condition, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE) %>% 
+  unite(Condition_Rep, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, Transfection_Replicate, remove = FALSE) %>% 
+  unite(Condition_No_Batch, Parent_Cell_Line, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE)
+
+
+## Looking at Target gene upregulation in HEK293T cells normalized to dCAS9
+
+
+PH2_qPCR <- qPCR %>% 
+  mutate(TCF4_Delta_Ct = TCF4_Ct - `B-ACTIN_Ct`) 
+
+
+##Plot TCF4 expression in PH2 cells 
+
+##First calculate mean TCF4 delta ct of control for batch 1  
+
+TCF4_Control <- PH2_qPCR %>%
+  filter(Condition %in% c("PH2_1_Pitt-Hopkins_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_TCF4_Delta_Ct = mean(TCF4_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for TCF4 and fold change relative to control 
+
+TCF4_PH2_qPCR <- PH2_qPCR %>%
+  filter(Condition %in% c("PH2_1_Pitt-Hopkins_Scrambled_NA", "PH2_1_Pitt-Hopkins_TCF4_5", "PH2_1_Pitt-Hopkins_TCF4_3349")) 
+
+TCF4_PH2_qPCR$Mean_Control_TCF4_Delta_Ct <- TCF4_Control$Mean_Control_TCF4_Delta_Ct
+
+TCF4_PH2_qPCR <- TCF4_PH2_qPCR %>% 
+  mutate(TCF4_Delta_Delta_Ct = Mean_Control_TCF4_Delta_Ct - TCF4_Delta_Ct) %>% 
+  mutate(TCF4_Fold_Change_Relative_To_Control = 2^TCF4_Delta_Delta_Ct)
+
+TCF4_PH2_qPCR_B1 <- TCF4_PH2_qPCR 
+
+##Do the same for batch 2
+
+##First calculate mean TCF4 delta ct of control for batch 1  
+
+TCF4_Control <- PH2_qPCR %>%
+  filter(Condition %in% c("PH2_2_Pitt-Hopkins_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_TCF4_Delta_Ct = mean(TCF4_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for TCF4 and fold change relative to control 
+
+TCF4_PH2_qPCR <- PH2_qPCR %>%
+  filter(Condition %in% c("PH2_2_Pitt-Hopkins_Scrambled_NA", "PH2_2_Pitt-Hopkins_TCF4_5", "PH2_2_Pitt-Hopkins_TCF4_3349")) 
+
+TCF4_PH2_qPCR$Mean_Control_TCF4_Delta_Ct <- TCF4_Control$Mean_Control_TCF4_Delta_Ct
+
+TCF4_PH2_qPCR <- TCF4_PH2_qPCR %>% 
+  mutate(TCF4_Delta_Delta_Ct = Mean_Control_TCF4_Delta_Ct - TCF4_Delta_Ct) %>% 
+  mutate(TCF4_Fold_Change_Relative_To_Control = 2^TCF4_Delta_Delta_Ct)
+
+TCF4_PH2_qPCR_B2 <- TCF4_PH2_qPCR
+
+##Combine for plotting
+
+TCF4_PH2_qPCR <- rbind(TCF4_PH2_qPCR_B1, TCF4_PH2_qPCR_B2)
+
+##Select relvant values
+
+TCF4_PH2_qPCR <- TCF4_PH2_qPCR %>% 
+  dplyr::select(Condition_No_Batch, Batch_Number, Transfection_Replicate, TCF4_Fold_Change_Relative_To_Control) 
+
+TCF4_PH2_qPCR$Condition_No_Batch <- factor(TCF4_PH2_qPCR$Condition_No_Batch, levels = c("PH2_Pitt-Hopkins_Scrambled_NA", "PH2_Pitt-Hopkins_TCF4_5", "PH2_Pitt-Hopkins_TCF4_3349"))
+  
+
+##Plot
+
+ggplot(TCF4_PH2_qPCR, aes(x = Condition_No_Batch, y = TCF4_Fold_Change_Relative_To_Control, fill = Condition_No_Batch)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#E69F00", "#56B4E9", "#56B4E9")) + 
+  stat_summary(fun.y=mean, geom="bar", colour = "black", width = 0.7) +
+  geom_jitter(size = 1.5, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,2), breaks = c(0,0.5,1,1.5)) +
+  theme(axis.text.x = element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 21)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_TCF4_PH2_Test_V_Control_Barchart.jpeg", width = 2.85, height = 4.2)  
+
+pairwise.t.test(TCF4_PH2_qPCR$TCF4_Fold_Change_Relative_To_Control, TCF4_PH2_qPCR$Condition_No_Batch, alternative = "greater", p.adjust.method = "fdr", pool.sd = FALSE) 
+
+TCF4_PH2_qPCR_Mean_FC <- TCF4_PH2_qPCR %>% 
+  group_by(Condition_No_Batch) %>% 
+  mutate(Mean_FC_Rel_Control = mean(TCF4_Fold_Change_Relative_To_Control)) %>% 
+  ungroup()
+
+
+```
+
+
+```{r}
+##Fig. 5k TCF4 HEK293T bar plot
+
+qPCR <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/250725_Table_SX_qPCR_Validation_Experiments.xlsx") %>% 
+  filter(Parent_Cell_Line == "HEK293T") %>% 
+  filter(Experiment_ID == c("TCF4_HEK293T"))
+  
+
+##Unite to make conditions
+
+qPCR <- qPCR %>% 
+  unite(Condition, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE) %>% 
+  unite(Condition_Rep, Parent_Cell_Line, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, Transfection_Replicate, remove = FALSE) %>% 
+  unite(Condition_No_Batch, Parent_Cell_Line, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE)
+
+
+## Looking at Target gene upregulation in HEK293T cells normalized to dCAS9
+
+
+HEK293T_qPCR <- qPCR %>% 
+  mutate(TCF4_Delta_Ct = TCF4_Ct - `B-ACTIN_Ct`) 
+
+
+##Plot TCF4 expression in HEK293T cells 
+
+##First calculate mean TCF4 delta ct of control for batch 1  
+
+TCF4_Control <- HEK293T_qPCR %>%
+  filter(Condition %in% c("HEK293T_1_WT_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_TCF4_Delta_Ct = mean(TCF4_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for TCF4 and fold change relative to control 
+
+TCF4_HEK293T_qPCR <- HEK293T_qPCR %>%
+  filter(Condition %in% c("HEK293T_1_WT_Scrambled_NA", "HEK293T_1_WT_TCF4_5", "HEK293T_1_WT_TCF4_3349")) 
+
+TCF4_HEK293T_qPCR$Mean_Control_TCF4_Delta_Ct <- TCF4_Control$Mean_Control_TCF4_Delta_Ct
+
+TCF4_HEK293T_qPCR <- TCF4_HEK293T_qPCR %>% 
+  mutate(TCF4_Delta_Delta_Ct = Mean_Control_TCF4_Delta_Ct - TCF4_Delta_Ct) %>% 
+  mutate(TCF4_Fold_Change_Relative_To_Control = 2^TCF4_Delta_Delta_Ct)
+
+TCF4_HEK293T_qPCR_B1 <- TCF4_HEK293T_qPCR 
+
+##Do the same for batch 2
+
+##First calculate mean TCF4 delta ct of control for batch 1  
+
+TCF4_Control <- HEK293T_qPCR %>%
+  filter(Condition %in% c("HEK293T_2_WT_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_TCF4_Delta_Ct = mean(TCF4_Delta_Ct)) %>% 
+  head(1)
+
+##Then add that value to relevant conditions, calculate the delta delta Ct for TCF4 and fold change relative to control 
+
+TCF4_HEK293T_qPCR <- HEK293T_qPCR %>%
+  filter(Condition %in% c("HEK293T_2_WT_Scrambled_NA", "HEK293T_2_WT_TCF4_5", "HEK293T_2_WT_TCF4_3349")) 
+
+TCF4_HEK293T_qPCR$Mean_Control_TCF4_Delta_Ct <- TCF4_Control$Mean_Control_TCF4_Delta_Ct
+
+TCF4_HEK293T_qPCR <- TCF4_HEK293T_qPCR %>% 
+  mutate(TCF4_Delta_Delta_Ct = Mean_Control_TCF4_Delta_Ct - TCF4_Delta_Ct) %>% 
+  mutate(TCF4_Fold_Change_Relative_To_Control = 2^TCF4_Delta_Delta_Ct)
+
+TCF4_HEK293T_qPCR_B2 <- TCF4_HEK293T_qPCR
+
+##Combine for plotting
+
+TCF4_HEK293T_qPCR <- rbind(TCF4_HEK293T_qPCR_B1, TCF4_HEK293T_qPCR_B2)
+
+##Select relvant values
+
+TCF4_HEK293T_qPCR <- TCF4_HEK293T_qPCR %>% 
+  dplyr::select(Condition_No_Batch, Batch_Number, Transfection_Replicate, TCF4_Fold_Change_Relative_To_Control) 
+
+TCF4_HEK293T_qPCR$Condition_No_Batch <- factor(TCF4_HEK293T_qPCR$Condition_No_Batch, levels = c("HEK293T_WT_Scrambled_NA", "HEK293T_WT_TCF4_5", "HEK293T_WT_TCF4_3349"))
+  
+
+##Plot
+
+ggplot(TCF4_HEK293T_qPCR, aes(x = Condition_No_Batch, y = TCF4_Fold_Change_Relative_To_Control, fill = Condition_No_Batch)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#E69F00", "#56B4E9", "#56B4E9")) + 
+  stat_summary(fun.y=mean, geom="bar", colour = "black", width = 0.7) +
+  geom_jitter(size = 1.5, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1), limits = c(0,1.7), breaks = c(0,0.5,1,1.5)) +
+  theme(axis.text.x = element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 21)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_TCF4_HEK293T_Test_V_Control_Barchart.jpeg", width = 2.85, height = 4.2)  
+
+pairwise.t.test(TCF4_HEK293T_qPCR$TCF4_Fold_Change_Relative_To_Control, TCF4_HEK293T_qPCR$Condition_No_Batch, alternative = "greater", p.adjust.method = "fdr", pool.sd = FALSE)
+
+TCF4_HEK293T_qPCR_Mean_FC <- TCF4_HEK293T_qPCR %>% 
+  group_by(Condition_No_Batch) %>% 
+  mutate(Mean_FC_Rel_Control = mean(TCF4_Fold_Change_Relative_To_Control)) %>% 
+  ungroup()
+
+
+```
+
+
+```{r}
+
+##Fig. 5l TCF4 het mouse bar plot 
+
+qPCR <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S6_Validation_experiments_and_qPCR.xlsx")
+
+##Unite to make conditions
+
+qPCR <- qPCR %>% 
+  unite(Condition, Experiment_ID, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE) %>% 
+  unite(Condition_Rep, Experiment_ID, Batch_Number, Genotype, CRISPRa_Target_Gene, gRNA_ID, Transfection_Replicate, remove = FALSE) %>% 
+  unite(Condition_No_Batch, Experiment_ID, Genotype, CRISPRa_Target_Gene, gRNA_ID, remove = FALSE)
+
+##Fitler for luminescence 
+
+TCF4_Luminescence <- qPCR %>% 
+  filter(Luminescence > 0)
+
+##First calculate mean TCF4 control expression for fold change 
+
+TCF4_Luminescence_Control <- TCF4_Luminescence %>%
+  filter(Condition %in% c("hTCF4_mouse_1_hTCF4_Het_Scrambled_NA")) %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_Control_TCF4_Luminescence = mean(Luminescence)) 
+
+##Calculate fold change
+
+TCF4_Luminescence <- TCF4_Luminescence %>% 
+  mutate(Fold_Change_Luminescence = Luminescence/TCF4_Luminescence_Control$Mean_Control_TCF4_Luminescence)
+
+##Plot
+
+ggplot(TCF4_Luminescence, aes(x = Condition, y = Fold_Change_Luminescence, fill = Condition)) + 
+    theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#E69F00", "#56B4E9")) + 
+  stat_summary(fun.y=mean, geom="bar", colour = "black", width = 0.7) +
+  geom_jitter(size = 1.5, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  theme(axis.text.x = element_blank()) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_5_TCF4_Mouse_Luminescence_Test_V_Control_Barchart.jpeg", width = 2.4, height = 4.2)  
+
+pairwise.t.test(TCF4_Luminescence$Fold_Change_Luminescence, TCF4_Luminescence$Condition, alternative = "greater", p.adjust.method = "fdr", pool.sd = FALSE)
+
+TCF4_Luminescence_Mean_FC <- TCF4_Luminescence %>% 
+  group_by(Condition) %>% 
+  mutate(Mean_FC_Rel_Control = mean(Fold_Change_Luminescence)) %>% 
+  ungroup()
+
+```
+

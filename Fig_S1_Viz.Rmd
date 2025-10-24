@@ -1,0 +1,387 @@
+---
+title: "Fig_S1_Visualizaton"
+author: "Troy McDiarmid"
+date: "2023-10-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggrepel)
+library(UpSetR)
+library(ComplexHeatmap)
+library(Gviz)
+library(GenomicInteractions)
+library(GenomicRanges)
+library(InteractionSet)
+library(tidyverse)
+library(biomaRt)
+library(readxl)
+library(reshape)
+```
+
+
+```{r}
+
+##Fig. S1d CRT gene LOEUF boxplot 
+
+Gnomad_Mane <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/gnomad_mane_loueff.csv")
+
+Gnomad_Mane$CRT_candidates <- factor(Gnomad_Mane$CRT_candidates, levels = c("other_genes", "CRT_candidates"))
+
+ggplot(Gnomad_Mane, aes(x = CRT_candidates, y = lof.oe_ci.upper, fill = CRT_candidates)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#999999")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  ylim(2,0) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S1_LOEUF_Boxplot.jpeg", width = 4.25, height = 4.75)
+
+
+##Fig. S1e Median brain expression boxplot 
+
+Brain_Var <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/brain_var.csv")
+
+Brain_Var$CRT_candidates <- factor(Brain_Var$CRT_candidates, levels = c("other_genes", "CRT_candidates"))
+
+ggplot(Brain_Var, aes(x = CRT_candidates, y = MedianExpr, fill = CRT_candidates)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#999999")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  ylim(-7,15) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S1_BrainVarExp_Boxplot.jpeg", width = 4.25, height = 4.75)
+
+
+```
+
+```{r}
+##Fig. S1c Candidate enhancer upset plot
+
+candidate_enhancer_regions_for_all_genes <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Candidate_Enhancer_Regions_For_All_Genes.csv")
+
+# Make combination matrix for candidate enhancer table
+m1 = make_comb_mat(candidate_enhancer_regions_for_all_genes[,c(5:9)])
+m1
+
+# Write candidate enhancer table to a pdf
+pdf('/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S1_candidate_enhancer_regions_for_all_genes.pdf', height = 3, width = 8)
+UpSet(m1, comb_col = "black", set_order = c("Midfetal_Cortex_Trevino", "NGN2_iNeuron_ABC", "GW18_PFC_ABC", "Fetal_Cerebrum_Cicero", "Midfetal_Cortex_Ziffra_ABC"), comb_order = order(comb_size(m1), decreasing = TRUE), pt_size = unit(2, "mm"), row_names_side = "left", left_annotation = NULL, right_annotation = NULL,
+      top_annotation = upset_top_annotation(m1, add_numbers = FALSE), lwd = 3)
+dev.off()
+
+```
+
+
+```{r}
+
+##Fig. S1f and S1g - plots of expression by enhancers per gene
+
+abc_score_table <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S2_Activity_by_Contact_Analysis_in_GW18_PFC_and_NGN2_iNeurons.xlsx")
+
+human_18gw_pfc_abc_score_table <- abc_score_table %>% 
+  filter(dataset == "GW18_PFC")
+
+WTC11_NGN2_iPSC_7_8wk_ExN_abc_score_table <-  abc_score_table %>% 
+  filter(dataset == "NGN2-iNeuron") 
+
+# Get the brain expression decile for all target genes from human 18GW PFC ABC Score dataset
+human_18gw_pfc_abc_score_table$decile <- ntile(human_18gw_pfc_abc_score_table$median_brain_expression, 10)
+
+# Get the number of candidate enhancers per gene from human 18GW PFC ABC Score dataset
+human_18gw_pfc_enhancers_per_gene <- human_18gw_pfc_abc_score_table %>% dplyr::count(target_gene_symbol, median_brain_expression, decile)
+
+# Get the mean number of enhancers vs the target gene expression decile for the human 18GW PFC ABC Score dataset
+human_18gw_pfc_enhancers_by_expression_decile <- human_18gw_pfc_enhancers_per_gene %>% group_by(decile) %>% summarise(mean = mean(n))
+
+# Get the brain expression decile for all target genes from human 18GW PFC ABC Score dataset
+WTC11_NGN2_iPSC_7_8wk_ExN_abc_score_table$decile <- ntile(WTC11_NGN2_iPSC_7_8wk_ExN_abc_score_table$median_brain_expression, 10)
+
+# Get the number of candidate enhancers per gene from human 18GW PFC ABC Score dataset
+WTC11_NGN2_iPSC_7_8wk_ExN_enhancers_per_gene <- WTC11_NGN2_iPSC_7_8wk_ExN_abc_score_table %>% dplyr::count(target_gene_symbol, median_brain_expression, decile)
+
+# Get the mean number of enhancers vs the target gene expression decile for the human 18GW PFC ABC Score dataset
+WTC11_NGN2_iPSC_7_8wk_ExN_enhancers_by_expression_decile <- WTC11_NGN2_iPSC_7_8wk_ExN_enhancers_per_gene %>% group_by(decile) %>% summarise(mean = mean(n))
+
+# merge datasets and plot final figure
+human_18gw_pfc_enhancers_by_expression_decile$dataset <- "GW18_PFC"
+WTC11_NGN2_iPSC_7_8wk_ExN_enhancers_by_expression_decile$dataset <- "NGN2_iNeuron"
+enhancers_by_expression_decile <- rbind(human_18gw_pfc_enhancers_by_expression_decile,
+                                        WTC11_NGN2_iPSC_7_8wk_ExN_enhancers_by_expression_decile)
+
+# change the order of factors for the legend
+enhancers_by_expression_decile$dataset <- factor(enhancers_by_expression_decile$dataset, levels = c("NGN2_iNeuron", "GW18_PFC"))
+
+ggplot(data = WTC11_NGN2_iPSC_7_8wk_ExN_enhancers_by_expression_decile, aes(x = decile, y = mean, group = dataset)) +
+  geom_line(size = 0.7, colour = "black") +
+  geom_point(size = 3) + 
+  theme_classic() +
+  scale_x_continuous(breaks = seq(1, 10, by = 1)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 24)) +
+  ylim(c(0, 11)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S1_NGN2_Expression_by_Enhancers_Per_Gene.jpeg", width = 4.25, height = 4.75)
+
+ggplot(data = human_18gw_pfc_enhancers_by_expression_decile, aes(x = decile, y = mean, group = dataset)) +
+  geom_line(size = 0.7, colour = "black") +
+  geom_point(size = 3) + 
+  theme_classic() +
+  scale_x_continuous(breaks = seq(1, 10, by = 1)) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 24)) +
+  ylim(c(0, 11)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S1_GW18PFC_Expression_by_Enhancers_Per_Gene.jpeg", width = 4.25, height = 4.75)
+
+
+```
+
+
+
+```{r}
+##Fig. S1h and S1i Enhancers per gene
+
+# Load the list of CRISPRa CRT candidate genes
+CRISPRa_CRT_candidates <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.csv")
+CRISPRa_CRT_candidates <- CRISPRa_CRT_candidates$gene_symbol
+
+abc_score_table <- read_excel("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S2_Activity_by_Contact_Analysis_in_GW18_PFC_and_NGN2_iNeurons.xlsx")
+
+# Label the ABC Score supplemental table by CRT candidate status
+abc_score_table$CRISPRa_CRT_candidates <- ifelse(abc_score_table$target_gene_symbol %in% CRISPRa_CRT_candidates, "CRT_candidates", "other_genes")
+
+# Get the number of candidate enhancers per gene from human 18GW PFC ABC Score dataset
+enhancers_per_gene <- abc_score_table %>% dplyr::count(target_gene_symbol, dataset, CRISPRa_CRT_candidates)
+
+
+
+enhancers_per_gene$CRISPRa_CRT_candidates <- factor(enhancers_per_gene$CRISPRa_CRT_candidates, levels = c("other_genes", "CRT_candidates"))
+
+NGN2_enhancers_per_gene <- enhancers_per_gene %>% 
+  filter(dataset == "NGN2-iNeuron")
+
+ggplot(NGN2_enhancers_per_gene, aes(x = CRISPRa_CRT_candidates, y = n, fill = CRISPRa_CRT_candidates)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#D2D5D5", "#999999")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  scale_y_continuous(trans='log10', breaks = c(1,10,100), limits = c(1,100)) +
+  annotation_logticks(sides = "l") +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S1_NGN2_Enhancers_Per_Gene_Boxplot.jpeg", width = 4.25, height = 4.75)
+
+GW18PFC_enhancers_per_gene <- enhancers_per_gene %>% 
+  filter(dataset == "GW18_PFC")
+
+ggplot(GW18PFC_enhancers_per_gene, aes(x = CRISPRa_CRT_candidates, y = n, fill = CRISPRa_CRT_candidates)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#D2D5D5", "#999999")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  scale_y_continuous(trans='log10', breaks = c(1,10,100), limits = c(1,100)) +
+  annotation_logticks(sides = "l") +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_S1_GW18_PFC_Enhancers_Per_Gene_Boxplot.jpeg", width = 4.25, height = 4.75)
+
+GW18PFC_enhancers_per_gene_mean_sd <-  GW18PFC_enhancers_per_gene %>% 
+  group_by(CRISPRa_CRT_candidates) %>% 
+  mutate(Mean_Enhancers_Per_Gene = mean(n)) %>% 
+  mutate(SD_Enhancers_Per_Gene = sd(n)) %>%   
+  ungroup()
+
+```
+
+
+```{r}
+
+##Fig. S1j correlation matrix heatmap
+
+gene_enhancer_pairs_final <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/gene_enhancer_pairs_by_dataset.txt", header = TRUE, sep = "\t")
+head(gene_enhancer_pairs_final)
+dim(gene_enhancer_pairs_final)
+
+# Replace negative values for Trevino dataset with NA
+gene_enhancer_pairs_final$Trevino <- ifelse(gene_enhancer_pairs_final$Trevino > 0, gene_enhancer_pairs_final$Trevino, NA)
+
+##Select relevant columns
+
+gene_enhancer_pairs_final_Matrix <- gene_enhancer_pairs_final %>% 
+  dplyr::select(3:7) 
+
+##Convert to matrix and correlate
+
+gene_enhancer_pairs_final_Matrix <- as.matrix(gene_enhancer_pairs_final_Matrix)
+
+gene_enhancer_pairs_final_Matrix_Corr_Matrix <- cor(gene_enhancer_pairs_final_Matrix, method = "spearman", use = "pairwise.complete.obs")
+
+##Pivoting data longer for plotting
+
+gene_enhancer_pairs_final_Corr_DF <- melt(gene_enhancer_pairs_final_Matrix_Corr_Matrix) 
+
+
+gene_enhancer_pairs_final_Corr_DF <- gene_enhancer_pairs_final_Corr_DF %>% 
+  dplyr::select(X1, X2, Corr = value) %>% 
+  mutate(Corr = round(Corr, digits = 2))
+
+gene_enhancer_pairs_final_Corr_DF$X1 <- ordered(gene_enhancer_pairs_final_Corr_DF$X1, levels = c("Trevino", "WTC11", "GW18", "Cicero", "Ziffra"))
+
+gene_enhancer_pairs_final_Corr_DF$X2 <- ordered(gene_enhancer_pairs_final_Corr_DF$X2, levels = c("Ziffra", "Cicero", "GW18", "WTC11", "Trevino"))
+
+##Making correlation heatmap 
+
+ggplot(gene_enhancer_pairs_final_Corr_DF, aes(x = X1, y = X2, fill = Corr)) +
+  geom_tile() 
+  ggsave("CRE_Dataset_Correlation_Legend.jpeg", width = 2.5, height = 2.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/FigS1_Corr_Heatmap_Legend.jpeg")
+
+
+ggplot(gene_enhancer_pairs_final_Corr_DF, aes(x = X1, y = X2, fill = Corr)) +
+  geom_tile() +
+  theme_void() +
+  geom_text(aes(label = Corr), color = "black", size = 18) +
+  scale_fill_gradient(low = "white", high = "black", limits=c(0, 1), breaks = c(0.0, 0.5, 1.0)) +
+  theme(axis.ticks.length=unit(0, "cm")) +
+  labs(title = "", x = "", y = "") + 
+  theme(axis.text = element_text(family="Arial", colour = "black", size = 12))
+ggsave("CRE_Dataset_Correlation_Heatmap.jpeg", width = 10, height = 8, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/FigS1_Corr_Heatmap.jpeg")
+
+
+```
+
+```{r}
+##Fig. S1k gviz plot 
+
+# Set genomic coordinates for plotting
+genome = "hg38"
+chrom = "chr2"
+chromStart = 164825000
+chromEnd = 166550000
+
+# load biomaRt data from ensembl
+biomart = biomaRt::useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl", host="https://useast.ensembl.org")
+
+# create an ideogram track to display chromosome
+#iTrack <- IdeogramTrack(genome = genome, chromosome = chrom, name = chrom)
+
+# create a genome axis track to display chromosome coordinates
+gTrack <- GenomeAxisTrack()
+
+# create track with ensembl genes
+biomTrack <- BiomartGeneRegionTrack(genome = genome, chromosome = chrom, name = "ENSEMBL", 
+                                    filter = list(with_refseq_mrna=TRUE), biomart = biomart)
+
+
+
+### (2) Create plot of candidate enhancers for SCN2A, only show contacts for CRT gene list #############################
+
+# Get the list of CRT candidate genes within the genomic window
+CRISPRa_CRT_candidates <- data.frame(read_xlsx(path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.xlsx", sheet = "Candidate_Genes"))
+CRISPRa_CRT_candidates$gene_symbol[which(CRISPRa_CRT_candidates$chrom == chrom & CRISPRa_CRT_candidates$start_hg38 > chromStart & CRISPRa_CRT_candidates$end_hg38 < chromEnd)]
+
+# Get all 80,533 candidate enhancers of all genes
+candidate_enhancers_for_all_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/candidate_enhancer_regions_for_all_genes.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name"))
+
+# Filter the genomic window of candidate enhancers for plotting
+candidate_enhancers_for_all_genes <- candidate_enhancers_for_all_genes[which(candidate_enhancers_for_all_genes$chrom == chrom & candidate_enhancers_for_all_genes$chromStart > chromStart & candidate_enhancers_for_all_genes$chromEnd < chromEnd),]
+
+
+# Create regulatory element annotation track
+REtrack <- AnnotationTrack(start = candidate_enhancers_for_all_genes$chromStart, 
+                           end = candidate_enhancers_for_all_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Candidate Regulatory Elements") 
+
+# Get all 761 TSSs of CRT genes
+TSSs_for_CRT_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name", "number", "strand"))
+
+# Create TSS annotation track
+TSStrack <- AnnotationTrack(start = TSSs_for_CRT_genes$chromStart, 
+                           end = TSSs_for_CRT_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Transcription_Start_Sites") 
+
+
+
+# Create genomic interaction dataframe for each candidate enhancer dataset
+GW18_PFC <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/gw18_pfc_ABC_Score_liftOver_hg38.bedpe",
+                                            type = "bedpe", experiment_name = "GW18_PFC", description = "ABC_Score")
+WTC11_iNeuron <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_ABC_Score_liftOver_hg38.bedpe",
+                                                 type = "bedpe", experiment_name = "WTC11_iNeuron", description = "ABC_Score")
+Cicero_Fetal_Cerebrum <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/midfetal_cerebrum_ExN_Cicero_liftOver_hg38.bedpe",
+                                                         type = "bedpe", experiment_name = "Cicero_Fetal_Cerebrum", description = "Cicero")
+Trevino_Fetal_Cortex <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/trevino_fetal_cortex_enhancer_predictions.bedpe",
+                                                        type = "bedpe", experiment_name = "Trevino_Fetal_Cortex", description = "Correlation")
+Ziffra_Fetal_Cortex <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/ziffra_fetal_human_cortex_ABC_Score.bedpe",
+                                                       type = "bedpe", experiment_name = "Ziffra_Fetal_Cortex", description = "ABC_Score")
+
+# only plot positive scores for Trevino
+Trevino_Fetal_Cortex <- Trevino_Fetal_Cortex[which(Trevino_Fetal_Cortex@elementMetadata$counts > 0),]
+
+
+# the height of the interaction plot represents the score from each prioritization method
+summary(GW18_PFC@elementMetadata$counts)
+summary(WTC11_iNeuron@elementMetadata$counts)
+summary(Cicero_Fetal_Cerebrum@elementMetadata$counts)
+summary(Trevino_Fetal_Cortex@elementMetadata$counts)
+summary(Ziffra_Fetal_Cortex@elementMetadata$counts)
+
+# Create interaction tracks for each candidate enhancer dataset
+GW18_PFC_interaction_track <- InteractionTrack(GW18_PFC, name = "GW18_PFC", chromosome = chrom)
+WTC11_iNeuron_interaction_track <- InteractionTrack(WTC11_iNeuron, name = "WTC11_iNeuron", chromosome = chrom)
+Cicero_Fetal_Cerebrum_interaction_track <- InteractionTrack(Cicero_Fetal_Cerebrum, name = "Cicero_Fetal_Cerebrum", chromosome = chrom)
+Trevino_Fetal_Cortex_interaction_track <- InteractionTrack(Trevino_Fetal_Cortex, name = "Trevino_Fetal_Cortex", chromosome = chrom)
+Ziffra_Fetal_Cortex_interaction_track <- InteractionTrack(Ziffra_Fetal_Cortex, name = "Ziffra_Fetal_Cortex", chromosome = chrom)
+
+
+# Show the available display parameters for a Gviz track
+# availableDisplayPars(gTrack)
+
+# Set track parameters for plotting
+displayPars(gTrack) <- list(fontsize = 6)
+displayPars(GW18_PFC_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(WTC11_iNeuron_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Cicero_Fetal_Cerebrum_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Trevino_Fetal_Cortex_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Ziffra_Fetal_Cortex_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(REtrack) <- list(col = "#56B4E9", fill = "#56B4E9", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(TSStrack) <- list(col = "#E69F00", fill = "#E69F00", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(biomTrack) <- list(background.title = "white", fontcolor.title = "black", col = "#999999", fill = "#999999", col.line = "#999999", utr3 = "#999999", utr5 = "#999999", protein_coding = "#999999")
+
+# Plot tracks for candidate enhancer regions of CRT genes only
+pdf("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/FigS1_SCN2A_locus_candidate_enhancers_Gviz_all_genes.pdf", height = 3, width = 10)
+plotTracks(list(gTrack, Trevino_Fetal_Cortex_interaction_track, WTC11_iNeuron_interaction_track, 
+                  GW18_PFC_interaction_track, Cicero_Fetal_Cerebrum_interaction_track, Ziffra_Fetal_Cortex_interaction_track, REtrack, TSStrack, biomTrack), 
+           stackHeight = 0.3, transcriptAnnotation = "symbol", from = chromStart, to = chromEnd, 
+           sizes = c(0.2, 0.15, 0.15, 0.15, 0.15, 0.15, 0.2, 0.2, 0.4), labelPos = "below")
+dev.off()
+
+```
+

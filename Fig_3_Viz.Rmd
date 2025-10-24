@@ -1,0 +1,1158 @@
+---
+title: "Fig_3_Visualization"
+author: "Troy McDiarmid"
+date: "2023-10-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(cowplot)
+library(Matrix)
+library(sceptre)
+library(VGAM)
+library(hdf5r)
+library(Seurat)
+library(cowplot)
+library(ggridges)
+library(scales)
+
+```
+
+```{r}
+##Fig. 3d QQ plot 
+
+set.seed(42)
+
+df1 <-  read.csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_NTC_Results.csv") %>%
+  select(p = p_value) 
+
+df1$group <- "NTC"
+
+Targeting_gRNA_Results <- read.csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Results.csv") %>%
+  select(p = p_value, grna_target) 
+
+Promoter_Targeting_gRNA_Results <- Targeting_gRNA_Results %>% 
+  dplyr::filter(!grepl("Enhancer", grna_target))
+Enhancer_Targeting_gRNA_Results <- Targeting_gRNA_Results %>% 
+  dplyr::filter(grepl("Enhancer", grna_target))  
+
+Promoter_Targeting_gRNA_Results$group <- "Promoter_Targeting"
+Enhancer_Targeting_gRNA_Results$group <- "Enhancer_Targeting"
+
+df2 <- rbind(Promoter_Targeting_gRNA_Results, Enhancer_Targeting_gRNA_Results) %>% 
+  select(!grna_target)
+
+ntc_label <- "NTC"     
+ci_level  <- 0.95
+
+all_df <-
+  bind_rows(
+    mutate(df1, .source = "df1"),
+    mutate(df2, .source = "df2")
+  ) %>%
+  filter(!is.na(p), p >= 0, p <= 1) %>%
+  mutate(group = as.factor(group))
+
+n_null <- sum(all_df$group == ntc_label, na.rm = TRUE)
+if (n_null < 2) n_null <- nrow(all_df)
+
+alpha <- (1 - ci_level) / 2
+i <- seq_len(n_null)
+exp_p    <- i / (n_null + 1)
+lower_p  <- qbeta(alpha,    i, n_null - i + 1)
+upper_p  <- qbeta(1 - alpha, i, n_null - i + 1)
+
+exp_df <- data.frame(
+  rank      = i,
+  exp_log   = -log10(exp_p),
+  lower_log = -log10(lower_p),
+  upper_log = -log10(upper_p)
+)
+
+obs_df <- all_df %>%
+  group_by(group) %>%
+  arrange(p, .by_group = TRUE) %>%
+  mutate(rank   = row_number(),
+         obs_log = -log10(p)) %>%
+  ungroup()
+
+
+obs_df$exp_log <- approx(
+  x = exp_df$rank, y = exp_df$exp_log,
+  xout = pmin(obs_df$rank, max(exp_df$rank)),
+  rule = 2
+)$y 
+
+##Cap max values 
+
+obs_df$obs_log_capped <- pmin(obs_df$obs_log, 8)
+
+##Reorder factors for plotting
+
+grp_order <- c("NTC", "Promoter_Targeting", "Enhancer_Targeting")
+
+obs_df$group <- factor(obs_df$group, levels = grp_order)
+obs_df <- obs_df[order(match(obs_df$group, grp_order)), ]
+
+#Plot (SCEPTRE-style)
+
+ggplot() +
+  geom_ribbon(data = exp_df,
+              aes(x = exp_log, ymin = lower_log, ymax = upper_log),
+              inherit.aes = FALSE, alpha = 0) +
+  geom_abline(slope = 1, intercept = 0, linewidth = 0.6) +
+  geom_point(data = obs_df,
+             aes(x = exp_log, y = obs_log_capped, colour = group),
+             size = 3) +
+  scale_color_manual(values=c("black", "#E69F00", "#56B4E9")) +
+        theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(text = element_text(family="Arial", colour = "black", size = 27.5)) +
+  scale_x_continuous(limits = c(1, NA)) +
+  scale_y_continuous(limits = c(1, 8), breaks = c(1,3,5,7)) +
+    theme(legend.position = "none") 
+ggsave("Fig_3_Neuron_SCEPTRE_QQ.jpeg", width = 11, height = 8, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+
+```
+
+
+
+```{r}
+##Fig. 3e volcano 
+
+Targeting_gRNA_Results <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Scaled_Only_Intended_Targets_Two_Sided_Discovery_Result.csv") %>% 
+  mutate(Neg_Log10_Pval = p_value+2.225074e-308) %>% 
+  mutate(Neg_Log10_Pval = -log10(Neg_Log10_Pval)) %>% 
+  dplyr::select(!type)
+
+Promoter_Targeting_gRNA_Results <- Targeting_gRNA_Results %>% 
+  dplyr::filter(!grepl("Enhancer", grna_group))
+Enhancer_Targeting_gRNA_Results <- Targeting_gRNA_Results %>% 
+  dplyr::filter(grepl("Enhancer", grna_group))  
+
+Promoter_Targeting_gRNA_Results$Type <- "Promoter_Targeting"
+Enhancer_Targeting_gRNA_Results$Type <- "Enhancer_Targeting"
+
+
+Targeting_results_volcano <- rbind(Promoter_Targeting_gRNA_Results, Enhancer_Targeting_gRNA_Results)
+
+Targeting_results_volcano$Neg_Log10_Pval[Targeting_results_volcano$Neg_Log10_Pval > 12] <- 12
+Targeting_results_volcano$log_2_fold_change[Targeting_results_volcano$log_2_fold_change > 2.5] <- 2.5
+
+
+ggplot(Targeting_results_volcano, aes(x = log_2_fold_change, y = Neg_Log10_Pval, colour = Type)) +
+  geom_point(size = 4) +
+        scale_color_manual(values=c("#D2D5D5", "#D2D5D5")) +
+        theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) +
+  scale_y_continuous(limits = c(0,12), breaks = c(0,4.0,8.0,12), labels = scales::number_format(accuracy = 0.1)) +
+  scale_x_continuous(limits = c(-2.5,2.5), labels = scales::number_format(accuracy = 0.1)) 
+ggsave("Fig_3_Neuron_SCEPTRE_Volcano.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+Two_Sided_Targeting <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Archived/SCEPTRE_Scaled_Neuron_Screen_Analysis/Only_Intended_Target_Results/Scaled_Only_Intended_Targets_Two_Sided_Discovery_Result.csv") 
+
+Two_Sided_NTCs <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Archived/SCEPTRE_Scaled_Neuron_Screen_Analysis/Only_Intended_Target_Results/Scaled_Only_Intended_Targets_Two_Sided_Calibration_Result.csv")
+
+Two_Sided_Targeting %>% filter(log_2_fold_change > 0)
+Two_Sided_Targeting %>% filter(log_2_fold_change < 0)
+Two_Sided_NTCs %>% filter(log_2_fold_change > 0)
+Two_Sided_NTCs %>% filter(log_2_fold_change < 0)
+
+##Fisher's exact test 
+
+ data_matrix <- matrix(c(6654, 4605, 5992, 5267), nrow = 2, byrow = TRUE)
+    result <- fisher.test(data_matrix)
+    print(result)
+
+```
+
+
+```{r}
+##Load gRNA matrix
+
+gRNA_matrix <- readRDS("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Scaled_Screen_gRNA_Matrix.mtx")
+
+MOI_Mat <- colSums(gRNA_matrix > 5)
+
+MOI_DF <- as.data.frame(as.table(MOI_Mat))
+
+MOI_DF <- MOI_DF %>%  
+    dplyr::rename(Cell = Var1) %>% 
+    dplyr::rename(MOI = Freq)  
+
+summary(MOI_DF)
+
+
+##Calculate assignment rate (the proportion of cells with 1 or more gRNA)
+
+Assignment_Rate <- 1 - (sum(MOI_DF == 0 ) / length(MOI_DF$MOI))
+
+Assignment_Rate
+
+
+##Fig. 3b gRNAs per cell histogram
+
+options(repr.plot.width=7, repr.plot.height=6)
+
+ggplot(MOI_DF, aes(x = MOI)) +
+geom_histogram(colour = "#D2D5D5", fill = "#D2D5D5", binwidth = 1) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) +
+  xlim(-1,60) 
+ggsave("Fig_3_gRNAs_Per_Cell.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+
+##Calculating the number of cells with each perturbation
+
+N_Cells_With_Pert_Mat <- rowSums(gRNA_matrix > 5)
+
+N_Cells_With_Pert_DF <- as.data.frame(as.table(N_Cells_With_Pert_Mat))
+
+N_Cells_With_Pert_DF <- N_Cells_With_Pert_DF %>%  
+    rename(Gene = Var1) %>% 
+    rename(N_Cells_With_Perturbation = Freq)  
+
+summary(N_Cells_With_Pert_DF)
+
+
+##Fig. 3c number of cells per perturbation
+
+options(repr.plot.width=7, repr.plot.height=6)
+
+ggplot(N_Cells_With_Pert_DF, aes(x = N_Cells_With_Perturbation)) +
+geom_histogram(colour = "#D2D5D5", fill = "#D2D5D5", binwidth = 5) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) +
+  xlim(-10,501) 
+ggsave("Fig_3_Cells_Per_gRNA.jpeg", width = 9, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+
+
+```
+
+
+```{r}
+
+Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% 
+  filter(!gRNA_Start == 45619857) 
+
+CRT_Candidate_Genes <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.csv")
+
+length(unique(CRT_Candidate_Genes$gene_symbol))
+
+CRT_Candidate_Hits <- Hits %>% 
+  filter(Target_Gene %in% CRT_Candidate_Genes$gene_symbol)
+  
+
+Hits <- CRT_Candidate_Hits
+
+
+Promoter_Hits <- Hits %>% 
+  filter(Target_CRE_Class == "Promoter")
+
+##Fig. 3f histograms
+
+ggplot(Promoter_Hits, aes(x = Log_2_Fold_Change)) +
+geom_histogram(colour = "#E69F00", fill = "#E69F00", binwidth = 0.1, lwd = 0) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  labs(title = "", x = "", y = "") +
+  xlim(0,8.5) +
+  theme(text = element_text(family="Arial", colour = "black", size = 40)) 
+ggsave("Fig_3_Promoter_Upregulation_Histogram.jpeg", width = 9, height = 4, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+Enhancer_Hits <- Hits %>% 
+  filter(Target_CRE_Class == "Enhancer")
+
+ggplot(Enhancer_Hits, aes(x = Log_2_Fold_Change)) +
+geom_histogram(colour = "#56B4E9", fill = "#56B4E9", binwidth = 0.1, lwd = 0) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  labs(title = "", x = "", y = "") +
+  xlim(0,8.5) +
+  theme(text = element_text(family="Arial", colour = "black", size = 40)) 
+ggsave("Fig_3_Enhancer_Upregulation_Histogram.jpeg", width = 9, height = 4, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+summary(Enhancer_Hits)
+summary(Promoter_Hits)
+
+Enhancer_Hits_2 <- Enhancer_Hits %>% 
+  mutate(FC = 2^Log_2_Fold_Change)
+Promoter_Hits_2 <- Promoter_Hits %>% 
+  mutate(FC = 2^Log_2_Fold_Change)
+
+summary(Enhancer_Hits_2)
+summary(Promoter_Hits_2)
+
+
+# Create Data on gRNA categories for pie chart
+
+CRT_Candidate_Genes <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.csv")
+
+length(unique(CRT_Candidate_Genes$gene_symbol))
+
+CRT_Candidate_Hits <- Hits %>% 
+  filter(Target_Gene %in% CRT_Candidate_Genes$gene_symbol)
+
+length(unique(CRT_Candidate_Genes$gene_symbol)) - length(unique(CRT_Candidate_Hits$Target_Gene))
+
+data <- data.frame(
+  gRNA_class=as.factor(c("Activating gRNA identified (n = 200)", "No Activating gRNA identified (n= 137)")),
+  value=c(200, 137))
+
+data$gRNA_class <- factor(data$gRNA_class, levels = c("Activating gRNA identified (n = 200)", "No Activating gRNA identified (n= 137)"))
+data$gRNA_class
+
+# Fig. 3g Pie chart
+ggplot(data, aes(x="", y=value, fill=gRNA_class)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  scale_fill_manual(values = c("#999999", "#D2D5D5")) +
+  coord_polar("y", start=0) +
+  theme_void() # remove background, grid, numeric labels
+ggsave("Fig_3_Hit_Pie_Chart.jpeg", width = 4, height = 4, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+
+##Fig. 3h Then counting number of hit gRNAs per gene for each CRE class
+
+Promoter_Enhancer_Hits_Per_Gene <- Hits %>% 
+  group_by(Ensembl_Id) %>% 
+  count(Target_CRE_Class)
+
+sum(Promoter_Enhancer_Hits_Per_Gene$n)
+
+Promoter_Enhancer_Hits_Per_Gene <-Promoter_Enhancer_Hits_Per_Gene %>% 
+  group_by(n) %>% 
+  count(Target_CRE_Class)
+
+ggplot(Promoter_Enhancer_Hits_Per_Gene, aes(fill=Target_CRE_Class, y=nn, x=n)) + 
+    geom_bar(position="stack", stat="identity") +
+  scale_fill_manual(values=c("#56B4E9", "#E69F00")) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) 
+ggsave("Fig_3_Promoter_Enhancer_Hit_Stacked_Bar.jpeg", width = 9.5, height = 7, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+
+##Fig. 3i Target gene distance plot
+
+Hits <- Hits %>% 
+  mutate(Neg_Log10_Pval = -log10(P_Value+2.225074e-308))
+
+Hits$Neg_Log10_Pval[Hits$Neg_Log10_Pval > 15] <- 15
+
+Hits$Target_CRE_Class <- factor(Hits$Target_CRE_Class, levels = c("Enhancer", "Promoter"))
+
+
+Promoter_Hits <- Hits %>% 
+  filter(Target_CRE_Class == "Promoter")
+
+ggplot(Promoter_Hits, aes(x=Target_Gene_Distance)) + 
+  geom_density(colour = "#E69F00", lwd = 2.25) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  scale_y_continuous(breaks = c(0, 6e-5, 4e-5, 2e-5)) +
+  scale_x_continuous(limits = c(-2100000, 2100000), breaks = c(-2000000,-1000000,0,1000000,2000000), expand = c(0,0)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) 
+  ggsave("Fig_3_Promoter_Distance.jpeg", width = 36, height = 3.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+  
+##Fig. 3k Same for enhancers
+  
+Enhancer_Hits <- Hits %>% 
+  filter(Target_CRE_Class == "Enhancer")
+
+ggplot(Enhancer_Hits, aes(x=Target_Gene_Distance, y = Neg_Log10_Pval)) + 
+  geom_point(size = 4, colour = "#56B4E9") +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  scale_y_continuous(limits = c(2,10), breaks = c(2, 4, 6, 8, 10)) +
+  scale_x_continuous(limits = c(-2100000, 2100000), breaks = c(-2000000,-1000000,0,1000000,2000000), expand = c(0,0)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) 
+  ggsave("Fig_3_Enhancer_Hit_Distance.jpeg", width = 36, height = 3.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+##Fig. 3l
+
+ggplot(Enhancer_Hits, aes(x=Target_Gene_Distance)) + 
+  geom_density(colour = "#56B4E9", lwd = 2.25) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  scale_y_continuous(breaks = c(0, 1e-6, 2e-6)) +
+  scale_x_continuous(limits = c(-2100000, 2100000), breaks = c(-2000000,-1000000,0,1000000,2000000), expand = c(0,0)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 38)) 
+  ggsave("Fig_3_Enhancer_Distance.jpeg", width = 36, height = 3.5, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+  
+##How many enhancer hits within 100kb of TSS
+  
+Enhancer_Hits_Withiin_20kb <- Enhancer_Hits %>% 
+  filter(Target_Gene_Distance > -100000) %>% 
+  filter(Target_Gene_Distance < 100000) 
+
+
+##How many genes do we have promoter hits or enhancer hits for? 
+  
+NDD_Gene_Promoter_Hits <- Hits %>% 
+  filter(!gRNA_Start == 45619857) %>% 
+  filter(Target_CRE_Class == "Promoter")
+
+length(unique(NDD_Gene_Promoter_Hits$Target_Gene))
+
+
+NDD_Gene_Enhancer_Hits <- Hits %>% 
+  filter(!gRNA_Start == 45619857) %>% 
+  filter(Target_CRE_Class == "Enhancer")
+
+length(unique(NDD_Gene_Enhancer_Hits$Target_Gene)) 
+
+##How many genes do we only have promoter or enhancer hits for? 
+
+Enhancer_Only_Hits <- NDD_Gene_Enhancer_Hits %>% 
+  filter(!Target_Gene %in% NDD_Gene_Promoter_Hits$Target_Gene)
+length(unique(Enhancer_Only_Hits$Target_Gene))
+
+Promoter_Only_Hits <- NDD_Gene_Promoter_Hits %>% 
+  filter(!Target_Gene %in% NDD_Gene_Enhancer_Hits$Target_Gene)
+length(unique(Promoter_Only_Hits$Target_Gene))
+
+##How many genes do we have more than 1 gRNA for
+
+CRT_Candidate_Hits <- CRT_Candidate_Hits %>% 
+  filter(!gRNA_Start == 45619857)
+
+CRT_Candidate_Hit_gRNAs_per_gene <- CRT_Candidate_Hits %>% 
+  group_by(Target_Gene) %>% 
+  count() 
+
+Greater_Than_1_CRT_Candidate_Hit_gRNAs_per_gene <- CRT_Candidate_Hit_gRNAs_per_gene %>% 
+  filter(n > 1)
+
+
+```  
+
+```{r}
+set.seed(3)
+##Fig. 3i Promoter boxplots
+  
+Gene_Matrix <- readRDS("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/SCEPTRE_Processed_Matrices/Scaled_Screen_gene_Matrix.mtx")
+gRNA_Matrix <- readRDS("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/SCEPTRE_Processed_Matrices/Scaled_Screen_gRNA_Matrix.mtx")
+
+##Defining gRNA & Target gene
+
+gRNA <- "13869_SOX10_Promoter_Horlbeck_etal"
+Target_Gene <- "ENSG00000100146"
+
+##Isolating cells with the gRNA
+
+gRNA_Cells <- as.data.frame(gRNA_Matrix[gRNA, ]) 
+
+gRNA_Cells <- gRNA_Cells %>% 
+  dplyr::rename("gRNA_Cells" = 1) %>% 
+  filter(gRNA_Cells > 5)
+
+rownames(gRNA_Cells)
+
+Gene_Matrix_gRNA_Cells <- as.data.frame(Gene_Matrix[, rownames(gRNA_Cells)]) 
+
+Gene_Matrix_gRNA_Cells <- rownames_to_column(Gene_Matrix_gRNA_Cells, "Ensembl_ID")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Gene_Matrix_gRNA_Cells_2$Group <- "gRNA_Cells"
+
+Gene_Matrix_gRNA_Cells_2_Target_Gene <- Gene_Matrix_gRNA_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Isolating control cells
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 2*length(gRNA_Cells$gRNA_Cells)), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+Control_Cells_2 <- Control_Cells %>% 
+  select(!any_of(rownames(gRNA_Cells))) %>% 
+  select(1:(length(gRNA_Cells$gRNA_Cells)))
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Control_Cells_2$Group <- "Control_Cells"
+
+Control_Cells_Target_Gene <- Control_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Combining for plotting
+
+gRNA_vs_Control_Cells_Target_Gene <- rbind(Gene_Matrix_gRNA_Cells_2_Target_Gene, Control_Cells_Target_Gene)
+
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=UMI_Count)) + 
+  geom_boxplot() +  
+  geom_jitter(height = 0, width = 0.2) +
+  theme_classic() 
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=Normalized_Expression, colour = Group, fill = Group)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#999999", "#E69F00")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 33)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_3_SOX10_Boxplot.jpeg", width = 3.75, height = 4.75)
+
+
+##Next gene
+
+##Defining gRNA & Target gene
+
+gRNA <- "13982_TCF7L2_Promoter_Horlbeck_etal"
+Target_Gene <- "ENSG00000148737"
+
+##Isolating cells with the gRNA
+
+gRNA_Cells <- as.data.frame(gRNA_Matrix[gRNA, ]) 
+
+gRNA_Cells <- gRNA_Cells %>% 
+  dplyr::rename("gRNA_Cells" = 1) %>% 
+  filter(gRNA_Cells > 5)
+
+rownames(gRNA_Cells)
+
+Gene_Matrix_gRNA_Cells <- as.data.frame(Gene_Matrix[, rownames(gRNA_Cells)]) 
+
+Gene_Matrix_gRNA_Cells <- rownames_to_column(Gene_Matrix_gRNA_Cells, "Ensembl_ID")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Gene_Matrix_gRNA_Cells_2$Group <- "gRNA_Cells"
+
+Gene_Matrix_gRNA_Cells_2_Target_Gene <- Gene_Matrix_gRNA_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Isolating control cells
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 2*length(gRNA_Cells$gRNA_Cells)), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+Control_Cells_2 <- Control_Cells %>% 
+  select(!any_of(rownames(gRNA_Cells))) %>% 
+  select(1:(length(gRNA_Cells$gRNA_Cells)))
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Control_Cells_2$Group <- "Control_Cells"
+
+Control_Cells_Target_Gene <- Control_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Combining for plotting
+
+TCF7L2_gRNA_vs_Control_Cells_Target_Gene <- rbind(Gene_Matrix_gRNA_Cells_2_Target_Gene, Control_Cells_Target_Gene)
+
+
+ggplot(TCF7L2_gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=UMI_Count)) + 
+  geom_boxplot() +  
+  geom_jitter(height = 0, width = 0.2) +
+  theme_classic() 
+
+ggplot(TCF7L2_gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=Normalized_Expression, colour = Group, fill = Group)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#999999", "#E69F00")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 33)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_3_TCF7L2_Boxplot.jpeg", width = 3.75, height = 4.75)
+
+
+##Next gene
+
+##Defining gRNA & Target gene
+
+gRNA <- "12122_SKI;ENST00000378536::chr1:2227818-2228318(+)_Promoter_Flashfry"
+Target_Gene <- "ENSG00000157933"
+
+##Isolating cells with the gRNA
+
+gRNA_Cells <- as.data.frame(gRNA_Matrix[gRNA, ]) 
+
+gRNA_Cells <- gRNA_Cells %>% 
+  dplyr::rename("gRNA_Cells" = 1) %>% 
+  filter(gRNA_Cells > 5)
+
+rownames(gRNA_Cells)
+
+Gene_Matrix_gRNA_Cells <- as.data.frame(Gene_Matrix[, rownames(gRNA_Cells)]) 
+
+Gene_Matrix_gRNA_Cells <- rownames_to_column(Gene_Matrix_gRNA_Cells, "Ensembl_ID")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Gene_Matrix_gRNA_Cells_2$Group <- "gRNA_Cells"
+
+Gene_Matrix_gRNA_Cells_2_Target_Gene <- Gene_Matrix_gRNA_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Isolating control cells
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 2*length(gRNA_Cells$gRNA_Cells)), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+Control_Cells_2 <- Control_Cells %>% 
+  select(!any_of(rownames(gRNA_Cells))) %>% 
+  select(1:(length(gRNA_Cells$gRNA_Cells)))
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Control_Cells_2$Group <- "Control_Cells"
+
+Control_Cells_Target_Gene <- Control_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Combining for plotting
+
+SKI_gRNA_vs_Control_Cells_Target_Gene <- rbind(Gene_Matrix_gRNA_Cells_2_Target_Gene, Control_Cells_Target_Gene)
+
+
+ggplot(SKI_gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=UMI_Count)) + 
+  geom_boxplot() +  
+  geom_jitter(height = 0, width = 0.2) +
+  theme_classic() 
+
+ggplot(SKI_gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=Normalized_Expression, colour = Group, fill = Group)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#999999", "#E69F00")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 33)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_3_SKI_Boxplot.jpeg", width = 3.75, height = 4.75)
+
+
+
+
+##Next gene
+
+##Defining gRNA & Target gene
+
+gRNA <- "13950_SV2A_Promoter_Horlbeck_etal"
+Target_Gene <- "ENSG00000159164"
+
+##Isolating cells with the gRNA
+
+gRNA_Cells <- as.data.frame(gRNA_Matrix[gRNA, ]) 
+
+gRNA_Cells <- gRNA_Cells %>% 
+  dplyr::rename("gRNA_Cells" = 1) %>% 
+  filter(gRNA_Cells > 5)
+
+rownames(gRNA_Cells)
+
+Gene_Matrix_gRNA_Cells <- as.data.frame(Gene_Matrix[, rownames(gRNA_Cells)]) 
+
+Gene_Matrix_gRNA_Cells <- rownames_to_column(Gene_Matrix_gRNA_Cells, "Ensembl_ID")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Gene_Matrix_gRNA_Cells_2$Group <- "gRNA_Cells"
+
+Gene_Matrix_gRNA_Cells_2_Target_Gene <- Gene_Matrix_gRNA_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Isolating control cells
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 2*length(gRNA_Cells$gRNA_Cells)), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+Control_Cells_2 <- Control_Cells %>% 
+  select(!any_of(rownames(gRNA_Cells))) %>% 
+  select(1:(length(gRNA_Cells$gRNA_Cells)))
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Control_Cells_2$Group <- "Control_Cells"
+
+Control_Cells_Target_Gene <- Control_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Combining for plotting
+
+SV2A_gRNA_vs_Control_Cells_Target_Gene <- rbind(Gene_Matrix_gRNA_Cells_2_Target_Gene, Control_Cells_Target_Gene)
+
+
+ggplot(SV2A_gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=UMI_Count)) + 
+  geom_boxplot() +  
+  geom_jitter(height = 0, width = 0.2) +
+  theme_classic() 
+
+ggplot(SV2A_gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=Normalized_Expression, colour = Group, fill = Group)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#999999", "#E69F00")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 33)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_3_SV2A_Boxplot.jpeg", width = 3.75, height = 4.75)
+
+
+```
+
+
+
+```{r}
+
+set.seed(3)
+
+##Fig. 3i Enhancer boxplots
+
+##Defining gRNA & Target gene
+
+gRNA <- "4457_chr20:59461341-59461841()_Enhancer_Flashfry"
+Target_Gene <- "ENSG00000087460"
+
+##Isolating cells with the gRNA
+
+gRNA_Cells <- as.data.frame(gRNA_Matrix[gRNA, ]) 
+
+gRNA_Cells <- gRNA_Cells %>% 
+  dplyr::rename("gRNA_Cells" = 1) %>% 
+  filter(gRNA_Cells > 5)
+
+rownames(gRNA_Cells)
+
+Gene_Matrix_gRNA_Cells <- as.data.frame(Gene_Matrix[, rownames(gRNA_Cells)]) 
+
+Gene_Matrix_gRNA_Cells <- rownames_to_column(Gene_Matrix_gRNA_Cells, "Ensembl_ID")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Gene_Matrix_gRNA_Cells_2$Group <- "gRNA_Cells"
+
+Gene_Matrix_gRNA_Cells_2_Target_Gene <- Gene_Matrix_gRNA_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Isolating control cells
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 2*length(gRNA_Cells$gRNA_Cells)), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+Control_Cells_2 <- Control_Cells %>% 
+  select(!any_of(rownames(gRNA_Cells))) %>% 
+  select(1:(length(gRNA_Cells$gRNA_Cells)))
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Control_Cells_2$Group <- "Control_Cells"
+
+Control_Cells_Target_Gene <- Control_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Combining for plotting
+
+gRNA_vs_Control_Cells_Target_Gene <- rbind(Gene_Matrix_gRNA_Cells_2_Target_Gene, Control_Cells_Target_Gene)
+
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=UMI_Count)) + 
+  geom_boxplot() +  
+  geom_jitter(height = 0, width = 0.2) +
+  theme_classic() 
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=Normalized_Expression, colour = Group, fill = Group)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#999999", "#56B4E9")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 33)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_3_GNAS_Boxplot.jpeg", width = 3.75, height = 4.75)
+
+
+##Next gene
+
+##Defining gRNA & Target gene
+
+gRNA <- "4375_chr20:47360281-47361206()_Enhancer_Flashfry"
+Target_Gene <- "ENSG00000101040"
+
+##Isolating cells with the gRNA
+
+gRNA_Cells <- as.data.frame(gRNA_Matrix[gRNA, ]) 
+
+gRNA_Cells <- gRNA_Cells %>% 
+  dplyr::rename("gRNA_Cells" = 1) %>% 
+  filter(gRNA_Cells > 5)
+
+rownames(gRNA_Cells)
+
+Gene_Matrix_gRNA_Cells <- as.data.frame(Gene_Matrix[, rownames(gRNA_Cells)]) 
+
+Gene_Matrix_gRNA_Cells <- rownames_to_column(Gene_Matrix_gRNA_Cells, "Ensembl_ID")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Gene_Matrix_gRNA_Cells_2$Group <- "gRNA_Cells"
+
+Gene_Matrix_gRNA_Cells_2_Target_Gene <- Gene_Matrix_gRNA_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Isolating control cells
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 2*length(gRNA_Cells$gRNA_Cells)), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+Control_Cells_2 <- Control_Cells %>% 
+  select(!any_of(rownames(gRNA_Cells))) %>% 
+  select(1:(length(gRNA_Cells$gRNA_Cells)))
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Control_Cells_2$Group <- "Control_Cells"
+
+Control_Cells_Target_Gene <- Control_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Combining for plotting
+
+gRNA_vs_Control_Cells_Target_Gene <- rbind(Gene_Matrix_gRNA_Cells_2_Target_Gene, Control_Cells_Target_Gene)
+
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=UMI_Count)) + 
+  geom_boxplot() +  
+  geom_jitter(height = 0, width = 0.2) +
+  theme_classic() 
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=Normalized_Expression, colour = Group, fill = Group)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#999999", "#56B4E9")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 33)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_3_ZMYND8_Boxplot.jpeg", width = 3.75, height = 4.75)
+
+
+
+##Next gene
+
+##Defining gRNA & Target gene
+
+gRNA <- "3041_chr17:8138129-8139915()_Enhancer_Flashfry"
+Target_Gene <- "ENSG00000133026"
+
+##Isolating cells with the gRNA
+
+gRNA_Cells <- as.data.frame(gRNA_Matrix[gRNA, ]) 
+
+gRNA_Cells <- gRNA_Cells %>% 
+  dplyr::rename("gRNA_Cells" = 1) %>% 
+  filter(gRNA_Cells > 5)
+
+rownames(gRNA_Cells)
+
+Gene_Matrix_gRNA_Cells <- as.data.frame(Gene_Matrix[, rownames(gRNA_Cells)]) 
+
+Gene_Matrix_gRNA_Cells <- rownames_to_column(Gene_Matrix_gRNA_Cells, "Ensembl_ID")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Gene_Matrix_gRNA_Cells_2$Group <- "gRNA_Cells"
+
+Gene_Matrix_gRNA_Cells_2_Target_Gene <- Gene_Matrix_gRNA_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Isolating control cells
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 2*length(gRNA_Cells$gRNA_Cells)), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+Control_Cells_2 <- Control_Cells %>% 
+  select(!any_of(rownames(gRNA_Cells))) %>% 
+  select(1:(length(gRNA_Cells$gRNA_Cells)))
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Control_Cells_2$Group <- "Control_Cells"
+
+Control_Cells_Target_Gene <- Control_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Combining for plotting
+
+gRNA_vs_Control_Cells_Target_Gene <- rbind(Gene_Matrix_gRNA_Cells_2_Target_Gene, Control_Cells_Target_Gene)
+
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=UMI_Count)) + 
+  geom_boxplot() +  
+  geom_jitter(height = 0, width = 0.2) +
+  theme_classic() 
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=Normalized_Expression, colour = Group, fill = Group)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#999999", "#56B4E9")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 33)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_3_MYH10_Boxplot.jpeg", width = 3.75, height = 4.75)
+
+
+##Next gene
+
+##Defining gRNA & Target gene
+
+gRNA <- "4517_chr20:63453937-63454632()_Enhancer_Flashfry"
+Target_Gene <- "ENSG00000101210"
+
+##Isolating cells with the gRNA
+
+gRNA_Cells <- as.data.frame(gRNA_Matrix[gRNA, ]) 
+
+gRNA_Cells <- gRNA_Cells %>% 
+  dplyr::rename("gRNA_Cells" = 1) %>% 
+  filter(gRNA_Cells > 5)
+
+rownames(gRNA_Cells)
+
+Gene_Matrix_gRNA_Cells <- as.data.frame(Gene_Matrix[, rownames(gRNA_Cells)]) 
+
+Gene_Matrix_gRNA_Cells <- rownames_to_column(Gene_Matrix_gRNA_Cells, "Ensembl_ID")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Gene_Matrix_gRNA_Cells_2 <- Gene_Matrix_gRNA_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Gene_Matrix_gRNA_Cells_2$Group <- "gRNA_Cells"
+
+Gene_Matrix_gRNA_Cells_2_Target_Gene <- Gene_Matrix_gRNA_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Isolating control cells
+
+Control_Cells <- as.data.frame(Gene_Matrix[,sample(ncol(Gene_Matrix), size = 2*length(gRNA_Cells$gRNA_Cells)), drop = FALSE])
+
+Control_Cells <- rownames_to_column(Control_Cells, "Ensembl_ID")
+
+Control_Cells_2 <- Control_Cells %>% 
+  select(!any_of(rownames(gRNA_Cells))) %>% 
+  select(1:(length(gRNA_Cells$gRNA_Cells)))
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  pivot_longer(!Ensembl_ID, names_to = "Cell_BC", values_to = "UMI_Count")
+
+Control_Cells_2 <- Control_Cells_2 %>% 
+  group_by(Cell_BC) %>% 
+  mutate(Normalized_Expression = log(((UMI_Count/sum(UMI_Count))*10000)+1))
+
+Control_Cells_2$Group <- "Control_Cells"
+
+Control_Cells_Target_Gene <- Control_Cells_2 %>% 
+  filter(Ensembl_ID == Target_Gene) 
+
+##Combining for plotting
+
+gRNA_vs_Control_Cells_Target_Gene <- rbind(Gene_Matrix_gRNA_Cells_2_Target_Gene, Control_Cells_Target_Gene)
+
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=UMI_Count)) + 
+  geom_boxplot() +  
+  geom_jitter(height = 0, width = 0.2) +
+  theme_classic() 
+
+ggplot(gRNA_vs_Control_Cells_Target_Gene, aes(x=Group, y=Normalized_Expression, colour = Group, fill = Group)) + 
+  theme_classic() +
+  scale_fill_manual(values=c("#999999", "#56B4E9")) +
+  geom_boxplot(colour = "black", width = 0.5, lwd =0.6, outlier.shape = NA) +
+  geom_jitter(size = 0.75, colour = "black", width = 0.15, height = 0) +
+  theme(axis.line = element_line(colour = 'black', size = 0.6)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.6)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  theme(text = element_text(family="Arial", colour = "black", size = 33)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_3_EEF1A2_Boxplot.jpeg", width = 3.75, height = 4.75)
+
+
+```
+
+
+```{r}
+
+##Identify hits within given fold change range
+
+Hits <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/SCEPTRE_PT_Hits_Annotated.csv") %>% 
+  filter(!gRNA_Start == 45619857) 
+
+CRT_Candidate_Genes <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.csv")
+
+length(unique(CRT_Candidate_Genes$gene_symbol))
+
+CRT_Candidate_Hits <- Hits %>% 
+  filter(Target_Gene %in% CRT_Candidate_Genes$gene_symbol)
+  
+
+Hits <- CRT_Candidate_Hits 
+
+Hits_2 <- CRT_Candidate_Hits %>% 
+  mutate(Fold_Change = 2^Log_2_Fold_Change)
+
+##Filter for different upregulation levels 
+
+
+Hits_1.5_2.5 <- Hits_2 %>% 
+  filter(Fold_Change > 1.4999) %>% 
+  filter(Fold_Change < 2.5001)
+
+```
+

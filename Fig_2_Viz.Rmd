@@ -1,0 +1,349 @@
+---
+title: "Fig_2_Visualization"
+author: "Troy McDiarmid"
+date: "2023-10-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggrepel)
+library(UpSetR)
+library(ComplexHeatmap)
+library(Gviz)
+library(GenomicInteractions)
+library(GenomicRanges)
+library(InteractionSet)
+library(tidyverse)
+library(biomaRt)
+library(readxl)
+library(sjmisc)
+```
+
+
+```{r}
+##Fig. 2B boxplot
+
+MPRA_Data <- read_csv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Neurohub_CRISPRa_CRT_MPRA_Results.csv")
+
+##Remove sequences with low BC counts
+
+MPRA_Data <- MPRA_Data %>% 
+  drop_na(Is_Active)
+
+
+MPRA_Data_BP <- MPRA_Data %>% 
+  filter(Sequence_Class %in% c("Scrambled", "Test"))
+  
+ggplot(MPRA_Data_BP, aes(x = Sequence_Class, y = Average_Log2_Count_Ratio, fill = Sequence_Class)) + 
+  theme_classic() +
+  #geom_violin() +
+  scale_fill_manual(values=c("#D2D5D5", "#56B4E9")) +
+  geom_boxplot(colour = "black", width = 0.6, lwd =0.5) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_2_Test_V_Control_Boxplot.jpeg", width = 3, height = 4.75)
+
+wilcox.test(Average_Log2_Count_Ratio ~ Sequence_Class, data = MPRA_Data_BP)
+
+
+##Fig. 2C MPRA activity accesibility peak 
+
+
+MPRA_Data_Peak <- MPRA_Data %>% 
+  separate(Oligo_Coordinates_hg38, into = c("Oligo_Chr", "Oligo_Coords"), sep = ":") %>% 
+  separate(Oligo_Coords, into = c("Oligo_Start", "Oligo_End"), sep = "-") %>% 
+  separate(CRS_Coordinates_hg38, into = c("CRS_Chr", "CRS_Coords"), sep = ":") %>% 
+  separate(CRS_Coords, into = c("CRS_Start", "CRS_End"), sep = "-") %>% 
+  type_convert() 
+
+MPRA_Data_Peak <- MPRA_Data_Peak %>% 
+  filter(Sequence_Class == "Test") %>% 
+  mutate(Oligo_Peak = (Oligo_Start+Oligo_End)/2) %>% 
+  mutate(CRS_Peak = (CRS_Start+CRS_End)/2) %>% 
+  mutate(Peak_Distance = CRS_Peak-Oligo_Peak) 
+
+ggplot(MPRA_Data_Peak, aes(x = Peak_Distance, y = 2^Average_Log2_Count_Ratio, colour = Is_Active)) + 
+  theme_classic() +
+  geom_point() +
+  scale_colour_manual(values=c("#D2D5D5", "#56B4E9")) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_x_continuous(limits = c(-3000,3000), breaks = c(-2000, 0, 2000)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_2_CRS_Activity_Peak.jpeg", width = 4.15, height = 4.75) 
+
+MPRA_Data_Peak_Active <- MPRA_Data_Peak %>% 
+  filter(Is_Active == TRUE) 
+
+ggplot(MPRA_Data_Peak_Active, aes(x = Peak_Distance, y = 2^Average_Log2_Count_Ratio, colour = Is_Active)) +
+  theme_classic() +
+  geom_point() +
+  scale_colour_manual(values=c("#56B4E9", "#56B4E9")) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_x_continuous(limits = c(-3000,3000), breaks = c(-2000, 0, 2000)) +
+  scale_y_continuous(limits = c(0, 81)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_2_CRS_Activity_Peak_Active_Only.jpeg", width = 4.15, height = 4.75)
+
+ggplot(MPRA_Data_Peak_Active, aes(x = Peak_Distance, y = 2^Average_Log2_Count_Ratio, colour = Is_Active)) +
+  theme_classic() +
+  geom_point() +
+  scale_colour_manual(values=c("#56B4E9", "#56B4E9")) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_x_continuous(limits = c(-3000,3000), breaks = c(-2000, 0, 2000)) +
+  scale_y_continuous(limits = c(0, 81)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_2_CRS_Activity_Peak_Active.jpeg", width = 4.15, height = 2.4)
+
+MPRA_Data_Peak_Active <- MPRA_Data_Peak %>% 
+  filter(Is_Active == FALSE) 
+ggplot(MPRA_Data_Peak_Active, aes(x = Peak_Distance, y = 2^Average_Log2_Count_Ratio, colour = Is_Active)) +
+  theme_classic() +
+  geom_point() +
+  scale_colour_manual(values=c("black", "black")) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_x_continuous(limits = c(-3000,3000), breaks = c(-2000, 0, 2000)) +
+  scale_y_continuous(limits = c(0, 81)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_2_CRS_Activity_Peak_Inactive.jpeg", width = 4.15, height = 2.4)
+
+ggplot(MPRA_Data_Peak, aes(x = Peak_Distance, y = 2^Average_Log2_Count_Ratio, colour = Is_Active)) + 
+  theme_classic() +
+  geom_line(stat = "summary_bin", fun = max, binwidth = 100, linewidth = 1) +
+  scale_colour_manual(values=c("#EDEDED", "#56B4E9")) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_x_continuous(limits = c(-2000,2000), breaks = c(-2000, 0, 2000)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_2_CRS_Activity_Peak_Line.jpeg", width = 4.15, height = 4.75)
+
+ggplot(MPRA_Data_Peak, aes(x = Peak_Distance, y = 2^Average_Log2_Count_Ratio, colour = Is_Active)) + 
+  theme_classic() +
+  geom_smooth() +
+  scale_colour_manual(values=c("#EDEDED", "#56B4E9")) +
+  theme(axis.line = element_line(colour = 'black', size = 0.5)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.5)) +
+  theme(axis.ticks.length=unit(.2, "cm"), legend.position = "none") +
+  theme(legend.position = "none") +
+  scale_x_continuous(limits = c(-2000,2000), breaks = c(-2000, 0, 2000)) +
+  theme(text = element_text(family="Arial", colour = "black", size = 23)) +
+  labs(title = "", x = "", y = "") 
+ggsave("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_2_CRS_Activity_Peak_Smooth.jpeg", width = 4.15, height = 4.75)
+
+
+##Fig. 2e upset plot
+
+MPRA_Top_10_Tiles <- MPRA_Data %>% 
+  filter(Sequence_Class == "Test") %>% 
+  mutate(Oligo_P_Rank = percent_rank(Average_Log2_Count_Ratio)) %>% 
+  filter(Oligo_P_Rank > 0.89999999999999) %>% 
+  distinct(CRS_Coordinates_hg38, .keep_all = TRUE) %>% 
+  dplyr::select(GW18_PFC_ABC:Midfetal_Cortex_Trevino)
+
+m1 = make_comb_mat(MPRA_Top_10_Tiles)
+
+pdf('/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Active_enhancer_regions_from_mpra_upset_plot.pdf', height = 3, width = 8)
+UpSet(m1, comb_col = "black", set_order = c("Midfetal_Cortex_Trevino", "NGN2_iPSC_ABC", "GW18_PFC_ABC", "Fetal_Cerebrum_Cicero", "Midfetal_Cortex_Ziffra_ABC"), comb_order = order(comb_size(m1), decreasing = TRUE), row_names_side = "left", left_annotation = NULL, right_annotation = NULL)
+dev.off()
+
+```
+
+
+```{r}
+##Fig. 2d SCN2A Gviz plot 
+
+# Set genomic coordinates for plotting
+genome = "hg38"
+chrom = "chr2"
+chromStart = 164900000
+chromEnd = 165400000
+
+# load biomaRt data from ensembl
+biomart = biomaRt::useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
+
+# create an ideogram track to display chromosome
+#iTrack <- IdeogramTrack(genome = genome, chromosome = chrom, name = chrom)
+
+# create a genome axis track to display chromosome coordinates
+gTrack <- GenomeAxisTrack()
+
+# create track with ensembl genes
+biomTrack <- BiomartGeneRegionTrack(genome = genome, chromosome = chrom, name = "ENSEMBL", 
+                                    filter = list(with_refseq_mrna=TRUE), biomart = biomart)
+
+
+
+### (2) Create plot of candidate enhancers for SCN2A, only show contacts for CRT gene list #############################
+
+# Get the list of CRT candidate genes within the genomic window
+CRISPRa_CRT_candidates <- data.frame(read_xlsx(path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/Table_S1_Cis_Regulation_Therapy_Candidate_Genes.xlsx", sheet = "Candidate_Genes"))
+CRISPRa_CRT_candidates$gene_symbol[which(CRISPRa_CRT_candidates$chrom == chrom & CRISPRa_CRT_candidates$start_hg38 > chromStart & CRISPRa_CRT_candidates$end_hg38 < chromEnd)]
+
+# Get all 5,425 candidate enhancers of CRT genes
+candidate_enhancers_for_CRT_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/candidate_enhancer_regions_for_CRISPRa_CRT_genes.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name"))
+
+# Filter the genomic window of candidate enhancers for plotting
+candidate_enhancers_for_CRT_genes <- candidate_enhancers_for_CRT_genes[which(candidate_enhancers_for_CRT_genes$chrom == chrom & candidate_enhancers_for_CRT_genes$chromStart > chromStart & candidate_enhancers_for_CRT_genes$chromEnd < chromEnd),]
+
+# Create regulatory element annotation track
+REtrack <- AnnotationTrack(start = candidate_enhancers_for_CRT_genes$chromStart, 
+                           end = candidate_enhancers_for_CRT_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Candidate Regulatory Elements") 
+
+
+# Get all 761 TSSs of CRT genes
+TSSs_for_CRT_genes <- read.table(file = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/CRISPRa_CRT_Candidates_gencode.v38.basic.coding.transcripts.500bp_promoters.bed", header = FALSE, sep = "\t",
+                                                col.names = c("chrom", "chromStart", "chromEnd", "name", "number", "strand")) %>% 
+  type_convert()
+
+# Filter the genomic window of candidate enhancers for plotting
+TSSs_for_CRT_genes <- TSSs_for_CRT_genes[which(TSSs_for_CRT_genes$chrom == chrom & TSSs_for_CRT_genes$chromStart > chromStart & TSSs_for_CRT_genes$chromEnd < chromEnd),]
+
+# Create TSS annotation track
+TSStrack <- AnnotationTrack(start = TSSs_for_CRT_genes$chromStart, 
+                           end = TSSs_for_CRT_genes$chromEnd, 
+                           chromosome = chrom, genome = genome, stacking = "dense",
+                           name = "Transcription_Start_Sites") 
+
+
+
+# Create genomic interaction dataframe for each candidate enhancer dataset
+GW18_PFC_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/gw18_pfc_ABC_Score_liftOver_hg38_NDD.bedpe",
+                                                type = "bedpe", experiment_name = "GW18_PFC", description = "ABC_Score")
+WTC11_iNeuron_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_ABC_Score_liftOver_hg38_NDD.bedpe",
+                                                     type = "bedpe", experiment_name = "WTC11_iNeuron", description = "ABC_Score")
+Cicero_Fetal_Cerebrum_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/midfetal_cerebrum_ExN_Cicero_liftOver_hg38_NDD.bedpe",
+                                                             type = "bedpe", experiment_name = "Cicero_Fetal_Cerebrum", description = "Cicero")
+Trevino_Fetal_Cortex_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/trevino_fetal_cortex_enhancer_predictions_NDD.bedpe",
+                                                            type = "bedpe", experiment_name = "Trevino_Fetal_Cortex", description = "Correlation")
+Ziffra_Fetal_Cortex_NDD <- makeGenomicInteractionsFromFile(fn = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/ziffra_fetal_human_cortex_ABC_Score_NDD_for_gviz_figures_only.bedpe",
+                                                           type = "bedpe", experiment_name = "Ziffra_Fetal_Cortex", description = "ABC_Score")
+
+# only plot positive scores for Trevino
+Trevino_Fetal_Cortex_NDD <- Trevino_Fetal_Cortex_NDD[which(Trevino_Fetal_Cortex_NDD@elementMetadata$counts > 0),]
+
+# the height of the interaction plot represents the score from each prioritization method
+summary(GW18_PFC_NDD@elementMetadata$counts)
+summary(WTC11_iNeuron_NDD@elementMetadata$counts)
+summary(Cicero_Fetal_Cerebrum_NDD@elementMetadata$counts)
+summary(Trevino_Fetal_Cortex_NDD@elementMetadata$counts)
+summary(Ziffra_Fetal_Cortex_NDD@elementMetadata$counts)
+
+# Create interaction tracks for each candidate enhancer dataset
+GW18_PFC_NDD_interaction_track <- InteractionTrack(GW18_PFC_NDD, name = "GW18_PFC", chromosome = chrom)
+WTC11_iNeuron_NDD_interaction_track <- InteractionTrack(WTC11_iNeuron_NDD, name = "WTC11_iNeuron", chromosome = chrom)
+Cicero_Fetal_Cerebrum_NDD_interaction_track <- InteractionTrack(Cicero_Fetal_Cerebrum_NDD, name = "Cicero_Fetal_Cerebrum", chromosome = chrom)
+Trevino_Fetal_Cortex_NDD_interaction_track <- InteractionTrack(Trevino_Fetal_Cortex_NDD, name = "Trevino_Fetal_Cortex", chromosome = chrom)
+Ziffra_Fetal_Cortex_NDD_interaction_track <- InteractionTrack(Ziffra_Fetal_Cortex_NDD, name = "Ziffra_Fetal_Cortex", chromosome = chrom)
+
+# Show the available display parameters for a Gviz track
+# availableDisplayPars(gTrack)
+
+
+##Adding an ENCODE ATAC track
+
+
+bamFile <- "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_ATAC-seq_Song_2019_hg38.50bp_trim.merged.srt.nodup.no_chrM_MT.filtered.bw"
+ATAC_track <- DataTrack(range = bamFile, genome = genome, type = "l", 
+                     name = "ATAC", window = -1, 
+                     chromosome = chrom, type = "hist", 
+                    col.histogram = "black", 
+                    fill.histogram = "black", background.title = "white", 
+                    fontcolor.title = "black", ylim = c(0,5))
+class(ATAC_track)
+
+ATAC_track
+
+
+
+##Adding a H3k27Ac track
+
+
+bamFile <- "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/WTC11_NGN2_iPSC_7-8wk_ExN_H3K27ac_CUT+RUN_Song_2019_hg38.srt.no_dups.filtered.bw"
+H3k27ac <- DataTrack(range = bamFile, genome = genome, type = "l", 
+                     name = "H3K27AC", window = -1, 
+                     chromosome = chrom, type = "hist", 
+                    col.histogram = "black", 
+                    fill.histogram = "black", background.title = "white", 
+                    fontcolor.title = "black", ylim = c(0,10))
+class(H3k27ac)
+
+H3k27ac
+
+
+
+# Set track parameters for plotting
+displayPars(gTrack) <- list(fontsize = 6)
+displayPars(GW18_PFC_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(WTC11_iNeuron_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Cicero_Fetal_Cerebrum_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Trevino_Fetal_Cortex_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(Ziffra_Fetal_Cortex_NDD_interaction_track) = list(col.interactions="#56B4E9", col.anchors.fill ="white", col.anchors.line = "white", interaction.dimension = "height", interaction.measure = "counts", plot.trans = FALSE, plot.outside = TRUE, col.outside = "#56B4E9", anchor.height = 0, background.title = "white", fontcolor.title = "black")
+displayPars(REtrack) <- list(col = "#56B4E9", fill = "#56B4E9", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(TSStrack) <- list(col = "#E69F00", fill = "#E69F00", col.axis = "black", background.title = "white", fontcolor.title = "black")
+displayPars(biomTrack) <- list(background.title = "white", fontcolor.title = "black", col = "#999999", fill = "#999999", col.line = "#999999", utr3 = "#999999", utr5 = "#999999", protein_coding = "#999999")
+displayPars(ATAC_track) <- list(background.title = "white", fontcolor.title = "black")
+displayPars(H3k27ac) <- list(background.title = "white", fontcolor.title = "black")
+
+# Plot tracks for candidate enhancer regions of CRT genes only
+pdf("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/Fig_2_SCN2A_candidate_enhancers_Gviz_CRT_genes_only.pdf", height = 3, width = 4.5)
+plotTracks(list(gTrack, WTC11_iNeuron_NDD_interaction_track, ATAC_track, H3k27ac, REtrack, TSStrack, biomTrack), 
+           stackHeight = 0.3, transcriptAnnotation = "symbol", from = chromStart, to = chromEnd, 
+           sizes = c(0.2, 0.15, 0.2, 0.2, 0.2, 0.2, 0.4), labelPos = "below")
+dev.off()
+
+
+```
+
+```{r}
+##Fig. 2f Motif analysis visualization
+
+Motif_Results <- read_tsv("/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Data/Figure_Data_IS/motif_results_table.txt")
+
+labels <- Motif_Results %>% filter(p_value < 1e-16)
+
+
+ggplot(Motif_Results, aes(x = mean_activity, y = -log10(p_value))) + 
+  geom_point(size = 4) +
+  #geom_text_repel(aes(label = short_name), data = labels, max.overlaps = Inf) +
+  theme_classic() +
+  theme(axis.line = element_line(colour = 'black', size = 0.8)) +
+  theme(axis.ticks = element_line(colour = "black", size = 0.8)) +
+  theme(axis.ticks.length=unit(.2, "cm")) +
+  labs(title = "", x = "", y = "") +
+  theme(legend.position = "none") +
+  scale_x_continuous(limits = c(3.85, 4.1), breaks = c(3.9, 4.0, 4.1)) +
+  ylim(c(0, 35)) + 
+  theme(text = element_text(family="Arial", colour = "black", size = 41)) 
+ggsave("Fig_2_Motif_Enrichment_Point.jpeg", width = 10.75, height = 6.9, path = "/Users/troymcdiarmid/Documents/Neurohub/Scaled_Screen/Figs/Pub_Figs/Figure_Embedded_Data_Visualizations/")
+
+
+
+```
+
